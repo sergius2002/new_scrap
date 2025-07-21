@@ -34,6 +34,7 @@ default_chat_id = '-4090514300'
 # Variables globales para el navegador
 browser = None
 page = None
+playwright = None
 
 # Archivo para almacenar los valores anteriores
 VALUES_FILE = 'previous_values.json'
@@ -98,52 +99,78 @@ async def cleanup_playwright_temp():
     playwright_temp = os.path.join(temp_dir, "playwright-artifacts-*")
     
     try:
-        for item in os.listdir(temp_dir):
-            if item.startswith("playwright-artifacts-"):
-                full_path = os.path.join(temp_dir, item)
-                if os.path.isdir(full_path):
-                    shutil.rmtree(full_path)
-                    logging.info(f"Directorio temporal eliminado: {full_path}")
+        import glob
+        for temp_file in glob.glob(playwright_temp):
+            if os.path.isdir(temp_file):
+                shutil.rmtree(temp_file)
+                logging.info(f"Directorio temporal eliminado: {temp_file}")
     except Exception as e:
         logging.error(f"Error al limpiar archivos temporales: {str(e)}")
 
 async def initialize_browser():
-    global browser, page
-    if page:
-        await page.close()
-    if browser:
-        await browser.close()
-    
-    await cleanup_playwright_temp()
+    global browser, page, playwright
+    try:
+        if page:
+            await page.close()
+        if browser:
+            await browser.close()
+        if playwright:
+            await playwright.stop()
+        
+        await cleanup_playwright_temp()
 
-    playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(headless=True)
-    context = await browser.new_context()
-    page = await context.new_page()
+        playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor'
+            ]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
 
-    await page.goto("https://www.aguacatewallet.com/auth/login")
-    email_input = page.locator('input[name="email"]')
-    password_input = page.locator('input[name="password"]')
-    login_button = page.locator('button[type="submit"]')
+        logging.info("Navegando a Aguacate Wallet...")
+        await page.goto("https://www.aguacatewallet.com/auth/login", wait_until="networkidle")
+        
+        logging.info("Llenando credenciales...")
+        await page.wait_for_selector('input[name="email"]', timeout=30000)
+        await page.fill('input[name="email"]', "sergio.plaza.altamirano@gmail.com")
+        await page.fill('input[name="password"]', "karjon-razHiv-puvru2")
+        await page.click('button[type="submit"]')
 
-    await email_input.fill("sergio.plaza.altamirano@gmail.com")
-    await password_input.fill("karjon-razHiv-puvru2")
-    await login_button.click()
+        logging.info("Esperando login...")
+        await page.wait_for_timeout(5000)
 
-    menu_button = page.locator('button:has-text("menu")')
-    await menu_button.click()
+        logging.info("Abriendo menú...")
+        await page.wait_for_selector('button:has-text("menu")', timeout=30000)
+        await page.click('button:has-text("menu")')
 
-    remesas_button = page.locator('span.pl-5.flex.flex-row.justify-start.gap-8:has-text("Remesas")')
-    await remesas_button.click()
+        logging.info("Navegando a Remesas...")
+        await page.wait_for_selector('span.pl-5.flex.flex-row.justify-start.gap-8:has-text("Remesas")', timeout=30000)
+        await page.click('span.pl-5.flex.flex-row.justify-start.gap-8:has-text("Remesas")')
 
-    await page.wait_for_selector('h1.text-lg.my-7', timeout=60000)
+        logging.info("Esperando datos de tasas...")
+        await page.wait_for_selector('h1.text-lg.my-7', timeout=60000)
+        
+        logging.info("Navegador inicializado correctamente")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Error inicializando navegador: {str(e)}")
+        return False
 
 async def is_session_expired():
     global page
-    current_url = page.url
-    if "auth/login" in current_url:
-        return True
     try:
+        current_url = page.url
+        if "auth/login" in current_url:
+            return True
         await page.wait_for_selector('h1.text-lg.my-7', timeout=10000)
         return False
     except Exception:
@@ -160,11 +187,14 @@ async def extract_data():
         try:
             if await is_session_expired():
                 logging.info("Sesión expirada. Reestableciendo sesión...")
-                await initialize_browser()
+                if not await initialize_browser():
+                    return f"❌ Error: No se pudo inicializar el navegador"
 
-            await page.reload()
+            logging.info("Recargando página...")
+            await page.reload(wait_until="networkidle")
             await page.wait_for_selector('h1.text-lg.my-7', timeout=60000)
 
+            logging.info("Extrayendo datos...")
             minimos_inferior = (await page.locator('h1.text-lg.my-7').nth(0).text_content()).strip().replace("Mínimo", "").strip()
             minimos_superior = (await page.locator('h1.text-lg.my-7').nth(1).text_content()).strip().replace("Mínimo", "").strip()
             banesco_inferior = (await page.locator('span.text-xl.font-bold').nth(0).text_content()).strip()
@@ -205,26 +235,34 @@ async def extract_data():
                     "{:<22} : {} {}".format("Venezuela ", venezuela_superior, venezuela_superior_icon) +
                     "</pre>"
             )
+            logging.info("Datos extraídos exitosamente")
             return resultado
 
         except Exception as e:
+            logging.error(f"Error en intento {attempt + 1}: {str(e)}")
             if attempt < max_retries - 1:
-                logging.warning(f"Intento {attempt + 1} falló: {str(e)}. Reintentando...")
+                logging.warning(f"Reintentando en 5 segundos...")
                 await asyncio.sleep(5)
             else:
-                logging.error(f"Error persistente tras {max_retries} intentos: {str(e)}")
                 return f"❌ Error tras {max_retries} intentos: {str(e)}"
 
 async def close_browser():
-    global browser, page
-    if page:
-        await page.close()
-        page = None
-    if browser:
-        await browser.close()
-        browser = None
-    
-    await cleanup_playwright_temp()
+    global browser, page, playwright
+    try:
+        if page:
+            await page.close()
+            page = None
+        if browser:
+            await browser.close()
+            browser = None
+        if playwright:
+            await playwright.stop()
+            playwright = None
+        
+        await cleanup_playwright_temp()
+        logging.info("Navegador cerrado correctamente")
+    except Exception as e:
+        logging.error(f"Error cerrando navegador: {str(e)}")
 
 # Comando /start
 @bot.message_handler(commands=['start'])
@@ -237,13 +275,18 @@ def send_welcome(message):
 def handle_agua(message):
     async def run_extraction():
         try:
-            await initialize_browser()
+            logging.info(f"Comando /agua recibido de {message.from_user.username}")
+            if not page:
+                logging.info("Inicializando navegador...")
+                if not await initialize_browser():
+                    safe_send_message(message.chat.id, "❌ Error: No se pudo inicializar el navegador")
+                    return
+            
             resultado = await extract_data()
             safe_send_message(message.chat.id, resultado, parse_mode="HTML")
         except Exception as e:
+            logging.error(f"Error en extracción: {str(e)}")
             safe_send_message(message.chat.id, f"❌ Error al extraer datos: {str(e)}")
-        finally:
-            await close_browser()
 
     asyncio.run(run_extraction())
 
@@ -254,10 +297,10 @@ def run_polling():
             logging.info("Iniciando polling...")
             bot.polling(none_stop=True, timeout=60, long_polling_timeout=60)
         except Exception as e:
-            logging.error(f"Error en polling: {str(e)}. Reintentando en 10 segundos...")
+            logging.error(f"Error en polling: {str(e)}")
+            logging.info("Reintentando en 10 segundos...")
             time.sleep(10)
 
-# Iniciar el bot
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.info("Bot iniciado...")
     run_polling()
