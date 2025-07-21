@@ -379,8 +379,8 @@ def run_script_every_20_minutes():
             subprocess.run(["python3", santander_script])
         except Exception as e:
             print(f"Error en la ejecución del flujo: {e}")
-        print("\n>>> Flujo completado. Esperando 10 minutos para la próxima ejecución...\n")
-        time.sleep(600)  # 10 minutos entre ejecuciones
+        print("\n>>> Flujo completado. Esperando 20 minutos para la próxima ejecución...\n")
+        time.sleep(1200)  # 20 minutos entre ejecuciones
 
 ################################################################################
 # Punto de entrada
