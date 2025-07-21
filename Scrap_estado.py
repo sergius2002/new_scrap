@@ -12,6 +12,14 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from openpyxl import Workbook
 import pandas as pd
 
+# --------------------------
+# PRINTS DE DEPURACIÓN
+# --------------------------
+print("INICIO SCRIPT")
+print(f"Directorio actual: {os.getcwd()}")
+print(f"Archivos en carpeta actual: {os.listdir('.')}")
+print("-" * 50)
+
 
 # --------------------------
 # Funciones Auxiliares
@@ -538,7 +546,9 @@ async def main():
         {"rutEmpresa": "77936187K", "rutPersona": "171091349", "password": "Kj6mm866"}
     ]
     
+    print("A punto de lanzar Playwright")
     async with async_playwright() as p:
+        print("Playwright iniciado correctamente")
         # Procesar todas las cuentas simultáneamente
         results = await asyncio.gather(*[process_account(account, p) for account in accounts])
 
