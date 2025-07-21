@@ -1,0 +1,131 @@
+# Logs
+*.log
+supervisor_scripts.log
+facturacion.log
+
+# Archivos temporales
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Archivos de configuración local
+.env.local
+.env.production
+
+# Archivos de datos temporales
+*.pkl
+*.pickle
+estado_binance.pkl
+
+# Archivos de salida
+output/
+*.output
+
+# Archivos de imagen innecesarios
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.ico
+
+# Archivos JSON innecesarios (excepto certificados)
+*.json
+!certificado/*.json
+!config.json
+
+# Archivos Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Archivos de historial
+historicos_*.json
+previous_values.json
+
+# Carpeta de scripts no utilizados por el supervisor
+otros/
+
+# Archivos de Excel temporales
+*.xlsx~
+*.xls~
+
+# Archivos de Python compilados
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribución / empaquetado
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unidades de instalación
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json 
