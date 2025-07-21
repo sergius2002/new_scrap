@@ -62,7 +62,7 @@ async def run_flow_once():
     async with async_playwright() as p:
         # Se usa Chrome y se inicia la ventana minimizada
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,
             args=["--start-minimized"]
         )
 
