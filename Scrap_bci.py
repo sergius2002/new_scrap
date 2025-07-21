@@ -610,7 +610,11 @@ async def monitor_table_changes_with_retry():
             
             await monitor_table_changes()
             print("✅ Proceso BCI completado. Ejecutando bci.py...")
-            subprocess.run(["python3", "bci.py"])
+            # Obtener la ruta absoluta del directorio del script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            bci_script = os.path.join(script_dir, "bci.py")
+            print(f"📁 Ejecutando bci.py desde: {bci_script}")
+            subprocess.run(["python3", bci_script])
             
             retry_count = 0
             last_error = None

@@ -372,7 +372,11 @@ def run_script_every_20_minutes():
             asyncio.run(run_flow_once())
             # Ejecutar Santander.py después de cada ejecución exitosa
             print("\n>>> Ejecutando Santander.py...")
-            subprocess.run(["python3", "Santander.py"])
+            # Obtener la ruta absoluta del directorio del script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            santander_script = os.path.join(script_dir, "Santander.py")
+            print(f"📁 Ejecutando Santander.py desde: {santander_script}")
+            subprocess.run(["python3", santander_script])
         except Exception as e:
             print(f"Error en la ejecución del flujo: {e}")
         print("\n>>> Flujo completado. Esperando 10 minutos para la próxima ejecución...\n")
