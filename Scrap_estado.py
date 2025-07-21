@@ -611,17 +611,6 @@ if __name__ == "__main__":
     
     while True:
         asyncio.run(main())
-        now = datetime.datetime.now()
-        current_minutes = now.hour * 60 + now.minute
-        if 480 <= current_minutes < 660:
-            sleep_interval = 5 * 60
-        elif 660 <= current_minutes <= 1080:
-            sleep_interval = 20 * 60
-        elif current_minutes >= 1081 or current_minutes == 0:
-            sleep_interval = 5 * 60
-        elif 1 <= current_minutes < 480:
-            sleep_interval = 58 * 60
-        else:
-            sleep_interval = 5 * 60
-        print(f"Esperando {int(sleep_interval / 60)} minutos para la siguiente ejecución...")
+        sleep_interval = 5 * 60  # 5 minutos todo el día
+        print(f"Esperando 5 minutos para la siguiente ejecución...")
         time.sleep(sleep_interval)
