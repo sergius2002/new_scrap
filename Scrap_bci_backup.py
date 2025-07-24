@@ -544,16 +544,15 @@ async def monitor_table_changes():
                     print(f"📁 Ejecutando bci.py desde: {bci_script}")
                     subprocess.run(["python3", bci_script])
                     
-                    # Verificar si el navegador sigue activo antes de recargar                    try:                        print("🔄 Recargando página para siguiente ciclo...")                        await page.reload()                        await random_delay(2, 3)                        wait_time = random.randint(15, 30)                        print(f"⏳ Esperando {wait_time} segundos antes de la siguiente descarga...")                        await asyncio.sleep(wait_time)                    except Exception as reload_error:                        print(f"⚠️  No se pudo recargar la página: {reload_error}")                        print("🔄 Navegador cerrado - Reiniciando...")                        try:                            await cleanup_resources(browser, context, page)                        except:                            pass                        raise Exception("NAVEGADOR_CERRADO")
-#                    # Recargar página para la siguiente iteración
-#                    print("🔄 Recargando página para siguiente ciclo...")
-#                    await page.reload()
-#                    await random_delay(2, 3)
-#                    
-#                    # Esperar antes de la siguiente descarga
-#                    wait_time = random.randint(15, 30)
-#                    print(f"⏳ Esperando {wait_time} segundos antes de la siguiente descarga...")
-#                    await asyncio.sleep(wait_time)
+                    # Recargar página para la siguiente iteración
+                    print("🔄 Recargando página para siguiente ciclo...")
+                    await page.reload()
+                    await random_delay(2, 3)
+                    
+                    # Esperar antes de la siguiente descarga
+                    wait_time = random.randint(15, 30)
+                    print(f"⏳ Esperando {wait_time} segundos antes de la siguiente descarga...")
+                    await asyncio.sleep(wait_time)
                     
                 except Exception as e:
                     print(f"❌ Error en ciclo de descarga: {str(e)}")

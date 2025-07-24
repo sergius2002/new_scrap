@@ -1,0 +1,3 @@
+[33m2b3d932[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Mejora manejo de cierre de navegador y bloqueos de seguridad - Agregada detección específica de navegador cerrado con excepción NAVEGADOR_CERRADO - Mejorado manejo de bloqueos de Cloudflare con verificación prioritaria - Optimizado reinicio automático del navegador - Sistema de notificaciones Gmail API funcionando correctamente
+[33m1f95a34[m Mejoras en Scrap_bci.py: ciclo continuo, navegación corregida, detección de sesión mejorada y credenciales actualizadas
+[33me792ccf[m Corregir manejo del navegador en scrap_aguacate.py - evitar cierre prematuro
