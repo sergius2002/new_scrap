@@ -374,7 +374,9 @@ async def login_to_bci(page):
         
         print("🔍 Esperando elementos del formulario...")
         # Esperar y llenar RUT con pausas entre cada carácter
+        # Credenciales actuales
         rut = "25880004-4"
+        # Credenciales provisorias: "17109134-9"
         for char in rut:
             await page.type("input#rut_aux", char, delay=random.randint(20, 50))
             await random_delay(0.05, 0.1)
@@ -387,6 +389,7 @@ async def login_to_bci(page):
         
         # Escribir contraseña con pausas variables
         clave = "Ps178445"
+        # Contraseña provisoria: "Kj6mm866"
         for char in clave:
             await page.type("input#clave", char, delay=random.randint(30, 70))
             await random_delay(0.05, 0.1)
@@ -475,7 +478,7 @@ async def cleanup_resources(browser, context, page):
         print(f"Error al limpiar recursos: {e}")
 
 async def monitor_table_changes():
-    """Función principal para monitorear y descargar datos"""
+    """Función principal para monitorear y descargar datos en ciclo continuo"""
     browser = None
     context = None
     page = None
@@ -492,106 +495,239 @@ async def monitor_table_changes():
                 'Connection': 'keep-alive'
             })
             
-            login_successful = await login_to_bci(page)
-            if not login_successful:
-                raise Exception("No se pudo completar el login")
-
-            await random_delay(2, 3)
-            print("🔄 Navegando a la sección de descarga...")
-            
-            # Continuar con la navegación
-            print("⏳ Esperando por iframe principal...")
-            await page.wait_for_selector("iframe#iframeContenido", timeout=20000)
-            iframe_element = await page.query_selector("iframe#iframeContenido")
-            iframe = await iframe_element.content_frame()
-            if not iframe:
-                raise Exception("No se pudo acceder al primer iframe")
-
-            # Simular comportamiento natural entre navegaciones
-            await simular_comportamiento_humano(page)
-            
-            print("🔍 Buscando menú de navegación...")
-            await random_delay(1, 1.5)
-            menu_button = await iframe.wait_for_selector("#item-title2", timeout=10000)
-            
-            # Simular hover antes de click
-            await menu_button.hover()
-            await random_delay(0.2, 0.4)
-            print("📌 Haciendo clic en primer menú...")
-            await menu_button.click()
-            
-            await random_delay(1, 1.5)
-            print("🔍 Buscando submenú...")
-            submenu_button = await iframe.wait_for_selector("#subitem-title21", timeout=10000)
-            
-            # Simular movimiento natural al submenú
-            await submenu_button.hover()
-            await random_delay(0.2, 0.4)
-            print("📌 Haciendo clic en submenú...")
-            await submenu_button.click()
-
-            await random_delay(1.5, 2)
-            print("⏳ Esperando por iframe secundario...")
-            await iframe.wait_for_selector("iframe#oss-layout-iframe", timeout=20000)
-            second_iframe_element = await iframe.query_selector("iframe#oss-layout-iframe")
-            second_iframe = await second_iframe_element.content_frame()
-            if not second_iframe:
-                raise Exception("No se pudo acceder al segundo iframe")
-
-            # Más comportamiento humano
-            await simular_comportamiento_humano(page)
-            
-            print("📥 Iniciando proceso de descarga...")
-            await random_delay(1, 1.5)
-            print("🔍 Buscando botón de descarga...")
-            download_button = await second_iframe.wait_for_selector(
-                "button.bci-wk-button-with-icon:has-text('Descargar')",
-                timeout=10000
-            )
-            
-            # Simular interacción natural con el botón de descarga
-            await download_button.hover()
-            await random_delay(0.2, 0.4)
-            print("📌 Haciendo clic en botón de descarga...")
-            await download_button.click()
-            
-            await random_delay(1, 1.5)
-            print("🔍 Buscando opción de excel detallado...")
-            excel_option = await second_iframe.wait_for_selector(
-                "li.item:has-text('Descargar excel detallado')",
-                timeout=10000
-            )
-            
-            # Simular selección natural de la opción de Excel
-            await excel_option.hover()
-            await random_delay(0.2, 0.4)
-            
-            print("📥 Iniciando descarga del archivo...")
-            async with page.expect_download() as download_info:
-                await excel_option.click()
-            
-            download = await download_info.value
-            file_path = await download.path()
-            
-            if file_path:
-                # Asegurar que el directorio existe
-                os.makedirs(EXCEL_OUTPUT_DIR, exist_ok=True)
-                local_file = os.path.join(EXCEL_OUTPUT_DIR, "excel_detallado.xlsx")
-                await download.save_as(local_file)
-                print(f"✅ Archivo descargado exitosamente: {local_file}")
-                
-                # Verificar el archivo descargado
-                if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
-                    print("✅ Verificación de archivo completada")
-                else:
-                    raise Exception("El archivo descargado parece estar vacío o corrupto")
+            # CICLO PRINCIPAL CONTINUO
+            while True:
+                try:
+                    # Verificar si la sesión sigue activa
+                    session_active = await check_session_active(page)
+                    print(f"🔍 Estado de sesión: {'Activa' if session_active else 'Inactiva'}")
+                    
+                    if not session_active:
+                        print("🔄 Sesión expirada, iniciando nuevo login...")
+                        login_success = await login_to_bci(page)
+                        if not login_success:
+                            print("❌ Login falló, reintentando...")
+                            await random_delay(5, 10)
+                            continue
+                        
+                        # Verificar nuevamente después del login
+                        await random_delay(2, 3)
+                        if not await check_session_active(page):
+                            print("❌ Login exitoso pero sesión no detectada, reintentando...")
+                            continue
+                        else:
+                            print("✅ Login exitoso y sesión activa detectada")
+                    
+                    # Navegar a la sección de descarga (solo si no estamos ya ahí)
+                    await navigate_to_download_section(page)
+                    
+                    # Descargar archivo
+                    download_success = await download_file(page)
+                    if not download_success:
+                        print("⚠️ Error en descarga, reintentando...")
+                        continue
+                    
+                    # Procesar archivo descargado
+                    print("✅ Proceso BCI completado. Ejecutando bci.py...")
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    bci_script = os.path.join(script_dir, "bci.py")
+                    print(f"📁 Ejecutando bci.py desde: {bci_script}")
+                    subprocess.run(["python3", bci_script])
+                    
+                    # Recargar página para la siguiente iteración
+                    print("🔄 Recargando página para siguiente ciclo...")
+                    await page.reload()
+                    await random_delay(2, 3)
+                    
+                    # Esperar antes de la siguiente descarga
+                    wait_time = random.randint(15, 30)
+                    print(f"⏳ Esperando {wait_time} segundos antes de la siguiente descarga...")
+                    await asyncio.sleep(wait_time)
+                    
+                except Exception as e:
+                    print(f"❌ Error en ciclo de descarga: {str(e)}")
+                    # Si es un error crítico, reiniciar navegador
+                    if "navegador" in str(e).lower() or "frozen" in str(e).lower():
+                        print("🔄 Reiniciando navegador por error crítico...")
+                        await cleanup_resources(browser, context, page)
+                        browser, context = await browser_profile.setup_context(p)
+                        page = await context.new_page()
+                    else:
+                        # Para otros errores, solo esperar y continuar
+                        await random_delay(5, 10)
+                        continue
 
     except Exception as e:
-        print(f"❌ Error en la automatización BCI: {str(e)}")
-        print(f"📍 Stack trace completo: {e.__class__.__name__}")
+        print(f"❌ Error crítico en la automatización BCI: {str(e)}")
     finally:
         await cleanup_resources(browser, context, page)
         gc.collect()
+
+async def check_session_active(page):
+    """Verifica si la sesión sigue activa"""
+    try:
+        # Verificar si estamos en la página de login (sesión expirada)
+        current_url = page.url
+        
+        # Si estamos en la página de login, la sesión no está activa
+        if "pyme" in current_url.lower() and ("login" in current_url.lower() or "ingresar" in current_url.lower()):
+            return False
+        
+        # Verificar si hay elementos que indiquen sesión activa
+        try:
+            # Intentar encontrar elementos que solo aparecen cuando la sesión está activa
+            await page.wait_for_selector("iframe#iframeContenido", timeout=5000)
+            
+            # Verificar también si hay elementos del dashboard
+            try:
+                await page.wait_for_selector("div.dashboard", timeout=3000)
+                return True
+            except:
+                # Si no hay dashboard, verificar otros elementos de sesión activa
+                try:
+                    await page.wait_for_selector("div.main-content", timeout=3000)
+                    return True
+                except:
+                    # Verificar si hay algún elemento que indique que estamos logueados
+                    page_content = await page.content()
+                    if "logout" in page_content.lower() or "cerrar sesión" in page_content.lower():
+                        return True
+                    return False
+        except:
+            return False
+            
+    except Exception:
+        return False
+
+async def navigate_to_download_section(page):
+    """Navega a la sección de descarga"""
+    try:
+        print("🔄 Navegando a la sección de descarga...")
+        
+        # Verificar si ya estamos en la sección correcta
+        try:
+            await page.wait_for_selector("iframe#iframeContenido", timeout=3000)
+            iframe_element = await page.query_selector("iframe#iframeContenido")
+            iframe = await iframe_element.content_frame()
+            
+            # Verificar si ya estamos en la sección de descarga correcta
+            try:
+                # Verificar si el botón de descarga está disponible (esto indica que ya navegamos correctamente)
+                await iframe.wait_for_selector("iframe#oss-layout-iframe", timeout=3000)
+                second_iframe_element = await iframe.query_selector("iframe#oss-layout-iframe")
+                second_iframe = await second_iframe_element.content_frame()
+                
+                # Verificar si el botón de descarga está visible
+                await second_iframe.wait_for_selector(
+                    "button.bci-wk-button-with-icon:has-text('Descargar')", 
+                    timeout=3000
+                )
+                print("✅ Ya estamos en la sección de descarga correcta")
+                return
+            except:
+                print("🔄 Necesitamos navegar a la sección de descarga...")
+                pass
+        except:
+            pass
+        
+        # Si no estamos en la sección correcta, navegar
+        print("⏳ Esperando por iframe principal...")
+        await page.wait_for_selector("iframe#iframeContenido", timeout=20000)
+        iframe_element = await page.query_selector("iframe#iframeContenido")
+        iframe = await iframe_element.content_frame()
+        if not iframe:
+            raise Exception("No se pudo acceder al primer iframe")
+
+        await simular_comportamiento_humano(page)
+        
+        print("🔍 Buscando menú de navegación (Cuentas)...")
+        await random_delay(1, 1.5)
+        menu_button = await iframe.wait_for_selector("#item-title2", timeout=10000)
+        
+        await menu_button.hover()
+        await random_delay(0.2, 0.4)
+        print("📌 Haciendo clic en Cuentas...")
+        await menu_button.click()
+        
+        await random_delay(1, 1.5)
+        print("🔍 Buscando submenú (Movimientos)...")
+        submenu_button = await iframe.wait_for_selector("#subitem-title21", timeout=10000)
+        
+        await submenu_button.hover()
+        await random_delay(0.2, 0.4)
+        print("📌 Haciendo clic en Movimientos...")
+        await submenu_button.click()
+
+        await random_delay(1.5, 2)
+        print("⏳ Esperando por iframe secundario...")
+        await iframe.wait_for_selector("iframe#oss-layout-iframe", timeout=20000)
+        
+        await simular_comportamiento_humano(page)
+        
+    except Exception as e:
+        print(f"❌ Error navegando a sección de descarga: {str(e)}")
+        raise
+
+async def download_file(page):
+    """Descarga el archivo Excel"""
+    try:
+        print("📥 Iniciando proceso de descarga...")
+        
+        # Obtener el iframe principal
+        iframe_element = await page.query_selector("iframe#iframeContenido")
+        iframe = await iframe_element.content_frame()
+        
+        # Obtener el iframe secundario
+        second_iframe_element = await iframe.query_selector("iframe#oss-layout-iframe")
+        second_iframe = await second_iframe_element.content_frame()
+        
+        await random_delay(1, 1.5)
+        print("🔍 Buscando botón de descarga...")
+        download_button = await second_iframe.wait_for_selector(
+            "button.bci-wk-button-with-icon:has-text('Descargar')",
+            timeout=10000
+        )
+        
+        await download_button.hover()
+        await random_delay(0.2, 0.4)
+        print("📌 Haciendo clic en botón de descarga...")
+        await download_button.click()
+        
+        await random_delay(1, 1.5)
+        print("🔍 Buscando opción de excel detallado...")
+        excel_option = await second_iframe.wait_for_selector(
+            "li.item:has-text('Descargar excel detallado')",
+            timeout=10000
+        )
+        
+        await excel_option.hover()
+        await random_delay(0.2, 0.4)
+        
+        print("📥 Iniciando descarga del archivo...")
+        async with page.expect_download() as download_info:
+            await excel_option.click()
+        
+        download = await download_info.value
+        file_path = await download.path()
+        
+        if file_path:
+            os.makedirs(EXCEL_OUTPUT_DIR, exist_ok=True)
+            local_file = os.path.join(EXCEL_OUTPUT_DIR, "excel_detallado.xlsx")
+            await download.save_as(local_file)
+            print(f"✅ Archivo descargado exitosamente: {local_file}")
+            
+            if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
+                print("✅ Verificación de archivo completada")
+                return True
+            else:
+                print("❌ El archivo descargado parece estar vacío o corrupto")
+                return False
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ Error en descarga: {str(e)}")
+        return False
 
 async def monitor_table_changes_with_retry():
     """Función principal con sistema de reintentos mejorado"""
@@ -609,20 +745,9 @@ async def monitor_table_changes_with_retry():
                 continue
             
             await monitor_table_changes()
-            print("✅ Proceso BCI completado. Ejecutando bci.py...")
-            # Obtener la ruta absoluta del directorio del script
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            bci_script = os.path.join(script_dir, "bci.py")
-            print(f"📁 Ejecutando bci.py desde: {bci_script}")
-            subprocess.run(["python3", bci_script])
             
             retry_count = 0
             last_error = None
-            
-            # Esperar con intervalo aleatorio
-            wait_time = random.randint(15, 30)
-            print(f"⏳ Esperando {wait_time} segundos antes de la siguiente ejecución...")
-            await asyncio.sleep(wait_time)
             
         except Exception as e:
             retry_count += 1
