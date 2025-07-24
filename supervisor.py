@@ -9,12 +9,22 @@ from datetime import datetime
 import os
 import sys
 from pathlib import Path
+import base64
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
 # Configurar logging
 logging.basicConfig(
-    filename='supervisor_scripts.log',
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('supervisor_scripts.log'),
+        logging.StreamHandler()  # También mostrar en consola
+    ]
 )
 
 # Obtener el directorio actual
@@ -32,10 +42,22 @@ ALL_SCRIPTS = [
 # Scripts habilitados (modificar esta lista para controlar qué scripts se ejecutan)
 ENABLED_SCRIPTS = [
     "Scrap_bci.py",
-    "Scrap_santander.py",
-    "Scrap_estado.py",
-    "Facturador_lioren.py"
+    #"Scrap_santander.py",
+    #"Scrap_estado.py",
+   # "Facturador_lioren.py"
 ]
+
+# Configuración de notificaciones
+NOTIFICATIONS_ENABLED = True  # Cambiar a False para desactivar
+EMAIL_RECIPIENT = "sergio.plaza.altamirano@gmail.com"  # Email de destino
+
+# Configuración de Gmail API (usando las mismas credenciales que Lioren)
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH", "certificado/lioren-446620-e63e8a6e22d4.json")
+TOKEN_PATH = os.getenv("TOKEN_PATH", "certificado/token.json")
+SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+
+# Estadísticas de ejecución
+script_stats = {}  # {script_name: {'start_time': datetime, 'restart_count': 0}}
 
 def check_script(script_name):
     """Verifica si un script está en ejecución."""
@@ -44,10 +66,86 @@ def check_script(script_name):
             return True
     return False
 
+def obtener_servicio_gmail():
+    """Obtiene el servicio de Gmail usando las credenciales de Lioren."""
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        logging.info(f"Cargando credenciales existentes de: {TOKEN_PATH}")
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            logging.info("Refrescando credenciales Gmail API...")
+            creds.refresh(Request())
+        else:
+            logging.info("No hay credenciales válidas, abriendo flujo OAuth2.")
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+            creds = flow.run_local_server(port=0)
+            logging.info("Autenticación completada.")
+        with open(TOKEN_PATH, "w") as token:
+            token.write(creds.to_json())
+            logging.info(f"Credenciales guardadas en: {TOKEN_PATH}")
+
+    service = build("gmail", "v1", credentials=creds)
+    return service
+
+def crear_mensaje_gmail(destinatario, asunto, mensaje):
+    """Crea un mensaje MIME para Gmail API."""
+    mensaje_mime = MIMEMultipart()
+    mensaje_mime["to"] = destinatario
+    mensaje_mime["subject"] = asunto
+    mensaje_mime.attach(MIMEText(mensaje, "plain", "utf-8"))
+
+    raw = base64.urlsafe_b64encode(mensaje_mime.as_bytes()).decode("utf-8")
+    return {"raw": raw}
+
+def enviar_mensaje_gmail(service, user_id, message):
+    """Envía un mensaje usando Gmail API."""
+    try:
+        sent_msg = service.users().messages().send(userId=user_id, body=message).execute()
+        logging.info(f"Mensaje enviado. ID: {sent_msg.get('id')}")
+        return True
+    except Exception as e:
+        logging.error(f"Error al enviar correo: {e}")
+        return False
+
+def send_notification(subject, message):
+    """Envía notificación por email usando Gmail API."""
+    if not NOTIFICATIONS_ENABLED:
+        return
+    
+    try:
+        service = obtener_servicio_gmail()
+        msg = crear_mensaje_gmail(EMAIL_RECIPIENT, f"[SUPERVISOR] {subject}", message)
+        exito = enviar_mensaje_gmail(service, "me", msg)
+        
+        if exito:
+            logging.info(f"Notificación enviada: {subject}")
+        else:
+            logging.error(f"Error enviando notificación: {subject}")
+    except Exception as e:
+        logging.error(f"Error enviando notificación: {e}")
+
 def restart_script(script_name):
     """Reinicia un script."""
     try:
-        logging.info(f"Reiniciando {script_name}")
+        # Actualizar estadísticas
+        if script_name not in script_stats:
+            script_stats[script_name] = {'start_time': datetime.now(), 'restart_count': 0}
+        else:
+            script_stats[script_name]['restart_count'] += 1
+            script_stats[script_name]['start_time'] = datetime.now()
+        
+        restart_count = script_stats[script_name]['restart_count']
+        logging.info(f"Reiniciando {script_name} (reinicio #{restart_count})")
+        
+        # Enviar notificación solo si es el primer reinicio o cada 5 reinicios
+        if restart_count == 1 or restart_count % 5 == 0:
+            send_notification(
+                f"Script caído: {script_name}", 
+                f"El script {script_name} se cayó y está siendo reiniciado automáticamente.\nReinicio #{restart_count}"
+            )
+        
         # Usar python3 explícitamente y el directorio actual
         subprocess.Popen(
             ["python3", str(current_dir / script_name)],
@@ -56,6 +154,7 @@ def restart_script(script_name):
         return True
     except Exception as e:
         logging.error(f"Error al reiniciar {script_name}: {e}")
+        send_notification(f"Error crítico: {script_name}", f"No se pudo reiniciar {script_name}: {e}")
         return False
 
 def cleanup_resources():
@@ -103,6 +202,35 @@ def cleanup_resources():
     except Exception as e:
         logging.error(f"Error al limpiar recursos: {e}")
 
+def send_daily_report():
+    """Envía reporte diario de estadísticas."""
+    if not NOTIFICATIONS_ENABLED:
+        return
+    
+    try:
+        report = f"""📊 REPORTE DIARIO DEL SUPERVISOR
+
+Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Servidor: {os.uname().nodename}
+
+"""
+        
+        for script_name, stats in script_stats.items():
+            uptime = datetime.now() - stats['start_time']
+            hours = int(uptime.total_seconds() // 3600)
+            minutes = int((uptime.total_seconds() % 3600) // 60)
+            
+            report += f"🔹 {script_name}:\n"
+            report += f"   ⏱️  Tiempo activo: {hours}h {minutes}m\n"
+            report += f"   🔄 Reinicios: {stats['restart_count']}\n\n"
+        
+        if not script_stats:
+            report += "No hay estadísticas disponibles.\n"
+        
+        send_notification("Reporte Diario", report)
+    except Exception as e:
+        logging.error(f"Error enviando reporte diario: {e}")
+
 def main():
     logging.info("Iniciando supervisor de scripts...")
     logging.info(f"Scripts habilitados: {', '.join(ENABLED_SCRIPTS)}")
@@ -114,6 +242,7 @@ def main():
             restart_script(script)
     
     last_cleanup = datetime.now()
+    last_report = datetime.now()
     
     while True:
         try:
@@ -129,6 +258,12 @@ def main():
             if (current_time - last_cleanup).total_seconds() >= 300:
                 cleanup_resources()
                 last_cleanup = current_time
+            
+            # Enviar reporte diario a las 8:00 AM
+            if (current_time.hour == 8 and current_time.minute == 0 and 
+                (current_time - last_report).total_seconds() >= 3600):
+                send_daily_report()
+                last_report = current_time
             
             time.sleep(60)  # Verificar cada minuto
             

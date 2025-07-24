@@ -434,20 +434,17 @@ async def login_to_bci(page):
         
     except Exception as e:
         print(f"❌ Error durante el login: {str(e)}")
+        # Si el navegador se cerró, lanzar una excepción específica para que se maneje arriba
+        if ("closed" in str(e).lower() or
+            "Target page, context or browser has been closed" in str(e)):
+            raise Exception("NAVEGADOR_CERRADO")
         return False
 
 async def handle_security_block(page):
     """Maneja los bloqueos de seguridad del sitio con reinicio de sesión"""
     try:
-        blocked_text = await page.text_content("body")
-        blocked_indicators = [
-            "Ha sido bloqueado por nuestra política de seguridad",
-            "política de seguridad",
-            "acceso bloqueado",
-            "acceso denegado"
-        ]
-        
-        if any(indicator.lower() in blocked_text.lower() for indicator in blocked_indicators):
+        # Usar la nueva función de detección de bloqueo
+        if await check_security_block(page):
             print("⚠️ Detectado bloqueo de seguridad...")
             print("🔄 Reiniciando sesión...")
             
@@ -498,6 +495,19 @@ async def monitor_table_changes():
             # CICLO PRINCIPAL CONTINUO
             while True:
                 try:
+                    # Verificar si estamos bloqueados por seguridad ANTES de todo
+                    try:
+                        if await check_security_block(page):
+                            print("🚨 BLOQUEO DE SEGURIDAD DETECTADO - Reiniciando navegador...")
+                            await random_delay(5, 10)  # Esperar antes de reiniciar
+                            await cleanup_resources(browser, context, page)
+                            browser, context = await browser_profile.setup_context(p)
+                            page = await context.new_page()
+                            print("✅ Navegador reiniciado después de bloqueo de seguridad")
+                            continue
+                    except:
+                        pass
+                    
                     # Verificar si la sesión sigue activa
                     session_active = await check_session_active(page)
                     print(f"🔍 Estado de sesión: {'Activa' if session_active else 'Inactiva'}")
@@ -546,12 +556,71 @@ async def monitor_table_changes():
                     
                 except Exception as e:
                     print(f"❌ Error en ciclo de descarga: {str(e)}")
-                    # Si es un error crítico, reiniciar navegador
-                    if "navegador" in str(e).lower() or "frozen" in str(e).lower():
+                    
+                    # Si es la excepción específica de navegador cerrado
+                    if str(e) == "NAVEGADOR_CERRADO":
+                        print("🔄 NAVEGADOR CERRADO - Reiniciando inmediatamente...")
+                        try:
+                            await cleanup_resources(browser, context, page)
+                        except:
+                            pass
+                        try:
+                            browser, context = await browser_profile.setup_context(p)
+                            page = await context.new_page()
+                            print("✅ Navegador reiniciado exitosamente")
+                            continue
+                        except Exception as setup_error:
+                            print(f"❌ Error al reiniciar navegador: {str(setup_error)}")
+                            await random_delay(10, 15)
+                            continue
+                    
+                    # Verificar si estamos bloqueados por seguridad PRIMERO
+                    try:
+                        if await check_security_block(page):
+                            print("🚨 BLOQUEO DE SEGURIDAD DETECTADO - Reiniciando navegador...")
+                            await random_delay(5, 10)  # Esperar antes de reiniciar
+                            await cleanup_resources(browser, context, page)
+                            browser, context = await browser_profile.setup_context(p)
+                            page = await context.new_page()
+                            print("✅ Navegador reiniciado después de bloqueo de seguridad")
+                            continue
+                    except:
+                        pass
+                    
+                    # Si el navegador se cerró, reiniciar inmediatamente
+                    if ("closed" in str(e).lower() or
+                        "Target page, context or browser has been closed" in str(e)):
+                        print("🔄 NAVEGADOR CERRADO - Reiniciando inmediatamente...")
+                        try:
+                            await cleanup_resources(browser, context, page)
+                        except:
+                            pass
+                        try:
+                            browser, context = await browser_profile.setup_context(p)
+                            page = await context.new_page()
+                            print("✅ Navegador reiniciado exitosamente")
+                            continue
+                        except Exception as setup_error:
+                            print(f"❌ Error al reiniciar navegador: {str(setup_error)}")
+                            await random_delay(10, 15)
+                            continue
+                    
+                    # Si es otro error crítico, reiniciar navegador
+                    if ("navegador" in str(e).lower() or 
+                        "frozen" in str(e).lower() or
+                        "timeout" in str(e).lower()):
                         print("🔄 Reiniciando navegador por error crítico...")
-                        await cleanup_resources(browser, context, page)
-                        browser, context = await browser_profile.setup_context(p)
-                        page = await context.new_page()
+                        try:
+                            await cleanup_resources(browser, context, page)
+                        except:
+                            pass
+                        try:
+                            browser, context = await browser_profile.setup_context(p)
+                            page = await context.new_page()
+                            print("✅ Navegador reiniciado exitosamente")
+                        except Exception as setup_error:
+                            print(f"❌ Error al reiniciar navegador: {str(setup_error)}")
+                            await random_delay(10, 15)
                     else:
                         # Para otros errores, solo esperar y continuar
                         await random_delay(5, 10)
@@ -563,9 +632,47 @@ async def monitor_table_changes():
         await cleanup_resources(browser, context, page)
         gc.collect()
 
+async def check_security_block(page):
+    """Verifica si estamos bloqueados por Cloudflare/seguridad"""
+    try:
+        # Verificar si estamos en la página de bloqueo de seguridad
+        page_content = await page.content()
+        
+        # Detectar mensajes de bloqueo de seguridad
+        security_indicators = [
+            "bloqueado por nuestra política de seguridad",
+            "estimado usuario",
+            "cloudflare",
+            "cf-ray:",
+            "security policy"
+        ]
+        
+        for indicator in security_indicators:
+            if indicator.lower() in page_content.lower():
+                print(f"🚨 DETECTADO BLOQUEO DE SEGURIDAD: {indicator}")
+                return True
+        
+        # Verificar URL específica de bloqueo
+        current_url = page.url
+        if "blocked" in current_url.lower() or "security" in current_url.lower():
+            print("🚨 DETECTADO BLOQUEO DE SEGURIDAD por URL")
+            return True
+            
+        return False
+    except Exception as e:
+        # Si el navegador está cerrado, no es un bloqueo de seguridad
+        if "closed" in str(e).lower() or "Target page, context or browser has been closed" in str(e):
+            return False
+        print(f"❌ Error verificando bloqueo de seguridad: {str(e)}")
+        return False
+
 async def check_session_active(page):
     """Verifica si la sesión sigue activa"""
     try:
+        # Primero verificar si estamos bloqueados por seguridad
+        if await check_security_block(page):
+            return False
+            
         # Verificar si estamos en la página de login (sesión expirada)
         current_url = page.url
         
