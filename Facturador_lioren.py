@@ -378,6 +378,35 @@ def obtener_datos_faltantes(rut):
             logger.error(f"Response text: {e.response.text[:200] if hasattr(e.response, 'text') else 'N/A'}...")
         return {}
 
+def verificar_excepcion_persona_natural(rut):
+    """Verifica si un RUT está en la lista de excepciones para personas naturales"""
+    try:
+        logger.info(f"Verificando excepción para persona natural RUT: {rut}")
+        
+        response = (
+            supabase.table("excepciones_personas_naturales")
+            .select("rut, razon_social, activo")
+            .eq("rut", rut)
+            .eq("activo", True)
+            .execute()
+        )
+        
+        if hasattr(response, 'error') and response.error:
+            logger.error(f"Error al verificar excepción para RUT {rut}: {response.error}")
+            return False
+        
+        datos = response.data
+        if datos:
+            logger.info(f"✅ RUT {rut} encontrado en excepciones de personas naturales")
+            return True
+        else:
+            logger.info(f"❌ RUT {rut} no está en excepciones de personas naturales")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error al verificar excepción para RUT {rut}: {e}")
+        return False
+
 # ---------------------------
 # Función Principal
 # ---------------------------
@@ -424,9 +453,14 @@ def procesar_facturas():
                 continue
 
             # Verificación de que el RUT corresponde a una empresa
+            # Permitir facturas a personas naturales si están en la lista de excepciones
             if facturacion != 'empresa':
-                logger.warning(f"RUT {rut} no es una empresa ({facturacion}). NO marcando como enviada.")
-                continue
+                # Verificar si está en las excepciones de personas naturales
+                if verificar_excepcion_persona_natural(rut):
+                    logger.info(f"✅ RUT {rut} es persona natural pero está en excepciones. Procesando factura.")
+                else:
+                    logger.warning(f"RUT {rut} no es una empresa ({facturacion}) y no está en las excepciones. NO marcando como enviada.")
+                    continue
 
             datos_faltantes = obtener_datos_faltantes(rut)
             if not datos_faltantes:
