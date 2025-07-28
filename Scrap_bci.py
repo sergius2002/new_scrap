@@ -544,24 +544,15 @@ async def monitor_table_changes():
                     print(f"📁 Ejecutando bci.py desde: {bci_script}")
                     subprocess.run(["python3", bci_script])
                     
-                    # Verificar si el navegador sigue activo antes de recargar
-                    try:
-                        print("🔄 Recargando página para siguiente ciclo...")
-                        await page.reload()
-                        
-                        # Esperar antes de la siguiente descarga
-                        wait_time = random.randint(15, 30)
-                        print(f"⏳ Esperando {wait_time} segundos antes de la siguiente descarga...")
-                        await asyncio.sleep(wait_time)
-                    except Exception as reload_error:
-                        print(f"⚠️  No se pudo recargar la página: {reload_error}")
-                        print("🔄 Navegador cerrado - Reiniciando...")
-                        # Limpiar recursos y lanzar excepción para que se maneje en el ciclo externo
-                        try:
-                            await cleanup_resources(browser, context, page)
-                        except:
-                            pass
-                        raise Exception("NAVEGADOR_CERRADO")
+                    # Recargar página para la siguiente iteración
+                    print("🔄 Recargando página para siguiente ciclo...")
+                    await page.reload()
+                    await random_delay(2, 3)
+                    
+                    # Esperar antes de la siguiente descarga
+                    wait_time = random.randint(15, 30)
+                    print(f"⏳ Esperando {wait_time} segundos antes de la siguiente descarga...")
+                    await asyncio.sleep(wait_time)
                     
                 except Exception as e:
                     print(f"❌ Error en ciclo de descarga: {str(e)}")
@@ -749,37 +740,37 @@ async def navigate_to_download_section(page):
         # Si no estamos en la sección correcta, navegar
         print("⏳ Esperando por iframe principal...")
         await page.wait_for_selector("iframe#iframeContenido", timeout=20000)
-            iframe_element = await page.query_selector("iframe#iframeContenido")
-            iframe = await iframe_element.content_frame()
-            if not iframe:
-                raise Exception("No se pudo acceder al primer iframe")
+        iframe_element = await page.query_selector("iframe#iframeContenido")
+        iframe = await iframe_element.content_frame()
+        if not iframe:
+            raise Exception("No se pudo acceder al primer iframe")
 
-            await simular_comportamiento_humano(page)
-            
+        await simular_comportamiento_humano(page)
+        
         print("🔍 Buscando menú de navegación (Cuentas)...")
-            await random_delay(1, 1.5)
-            menu_button = await iframe.wait_for_selector("#item-title2", timeout=10000)
-            
-            await menu_button.hover()
-            await random_delay(0.2, 0.4)
+        await random_delay(1, 1.5)
+        menu_button = await iframe.wait_for_selector("#item-title2", timeout=10000)
+        
+        await menu_button.hover()
+        await random_delay(0.2, 0.4)
         print("📌 Haciendo clic en Cuentas...")
-            await menu_button.click()
-            
-            await random_delay(1, 1.5)
+        await menu_button.click()
+        
+        await random_delay(1, 1.5)
         print("🔍 Buscando submenú (Movimientos)...")
-            submenu_button = await iframe.wait_for_selector("#subitem-title21", timeout=10000)
-            
-            await submenu_button.hover()
-            await random_delay(0.2, 0.4)
+        submenu_button = await iframe.wait_for_selector("#subitem-title21", timeout=10000)
+        
+        await submenu_button.hover()
+        await random_delay(0.2, 0.4)
         print("📌 Haciendo clic en Movimientos...")
-            await submenu_button.click()
+        await submenu_button.click()
 
-            await random_delay(1.5, 2)
-            print("⏳ Esperando por iframe secundario...")
-            await iframe.wait_for_selector("iframe#oss-layout-iframe", timeout=20000)
-
-            await simular_comportamiento_humano(page)
-            
+        await random_delay(1.5, 2)
+        print("⏳ Esperando por iframe secundario...")
+        await iframe.wait_for_selector("iframe#oss-layout-iframe", timeout=20000)
+        
+        await simular_comportamiento_humano(page)
+        
     except Exception as e:
         print(f"❌ Error navegando a sección de descarga: {str(e)}")
         raise
@@ -787,7 +778,7 @@ async def navigate_to_download_section(page):
 async def download_file(page):
     """Descarga el archivo Excel"""
     try:
-            print("📥 Iniciando proceso de descarga...")
+        print("📥 Iniciando proceso de descarga...")
         
         # Obtener el iframe principal
         iframe_element = await page.query_selector("iframe#iframeContenido")
@@ -797,50 +788,50 @@ async def download_file(page):
         second_iframe_element = await iframe.query_selector("iframe#oss-layout-iframe")
         second_iframe = await second_iframe_element.content_frame()
         
-            await random_delay(1, 1.5)
-            print("🔍 Buscando botón de descarga...")
-            download_button = await second_iframe.wait_for_selector(
-                "button.bci-wk-button-with-icon:has-text('Descargar')",
-                timeout=10000
-            )
+        await random_delay(1, 1.5)
+        print("🔍 Buscando botón de descarga...")
+        download_button = await second_iframe.wait_for_selector(
+            "button.bci-wk-button-with-icon:has-text('Descargar')",
+            timeout=10000
+        )
+        
+        await download_button.hover()
+        await random_delay(0.2, 0.4)
+        print("📌 Haciendo clic en botón de descarga...")
+        await download_button.click()
+        
+        await random_delay(1, 1.5)
+        print("🔍 Buscando opción de excel detallado...")
+        excel_option = await second_iframe.wait_for_selector(
+            "li.item:has-text('Descargar excel detallado')",
+            timeout=10000
+        )
+        
+        await excel_option.hover()
+        await random_delay(0.2, 0.4)
+        
+        print("📥 Iniciando descarga del archivo...")
+        async with page.expect_download() as download_info:
+            await excel_option.click()
+        
+        download = await download_info.value
+        file_path = await download.path()
+        
+        if file_path:
+            os.makedirs(EXCEL_OUTPUT_DIR, exist_ok=True)
+            local_file = os.path.join(EXCEL_OUTPUT_DIR, "excel_detallado.xlsx")
+            await download.save_as(local_file)
+            print(f"✅ Archivo descargado exitosamente: {local_file}")
             
-            await download_button.hover()
-            await random_delay(0.2, 0.4)
-            print("📌 Haciendo clic en botón de descarga...")
-            await download_button.click()
-            
-            await random_delay(1, 1.5)
-            print("🔍 Buscando opción de excel detallado...")
-            excel_option = await second_iframe.wait_for_selector(
-                "li.item:has-text('Descargar excel detallado')",
-                timeout=10000
-            )
-            
-            await excel_option.hover()
-            await random_delay(0.2, 0.4)
-            
-            print("📥 Iniciando descarga del archivo...")
-            async with page.expect_download() as download_info:
-                await excel_option.click()
-            
-            download = await download_info.value
-            file_path = await download.path()
-            
-            if file_path:
-                os.makedirs(EXCEL_OUTPUT_DIR, exist_ok=True)
-                local_file = os.path.join(EXCEL_OUTPUT_DIR, "excel_detallado.xlsx")
-                await download.save_as(local_file)
-                print(f"✅ Archivo descargado exitosamente: {local_file}")
-                
-                if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
-                    print("✅ Verificación de archivo completada")
+            if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
+                print("✅ Verificación de archivo completada")
                 return True
-                else:
+            else:
                 print("❌ El archivo descargado parece estar vacío o corrupto")
                 return False
         
         return False
-
+        
     except Exception as e:
         print(f"❌ Error en descarga: {str(e)}")
         return False
