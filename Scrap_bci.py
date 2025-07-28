@@ -548,7 +548,6 @@ async def monitor_table_changes():
                     try:
                         print("🔄 Recargando página para siguiente ciclo...")
                         await page.reload()
-            await random_delay(2, 3)
                         
                         # Esperar antes de la siguiente descarga
                         wait_time = random.randint(15, 30)
