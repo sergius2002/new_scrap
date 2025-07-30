@@ -8,9 +8,10 @@ import time
 import os
 import shutil
 import tempfile
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import async_playwright
 from openpyxl import Workbook
 import pandas as pd
+from saldo_bancos_db import SaldoBancosDB
 
 # --------------------------
 # PRINTS DE DEPURACIÓN
@@ -297,6 +298,162 @@ async def cleanup_browser_resources(browser, context_browser, page):
         print(f"Error al limpiar recursos del navegador: {e}")
 
 
+async def capturar_saldo_cuenta(page, account):
+    """Captura el saldo de la cuenta corriente desde la interfaz web de Banco Estado"""
+    try:
+        print(f"💰 Iniciando captura de saldo para cuenta {account['rutEmpresa']}...")
+        
+        # El saldo está disponible inmediatamente después del login
+        # Buscar el elemento específico que contiene el saldo
+        saldo_encontrado = None
+        
+        # Selectores específicos para el saldo de Banco Estado
+        selectores_saldo = [
+            # Selector específico basado en el atributo _ngcontent
+            "div[_ngcontent-ng-c2349411678][aria-hidden='true']",
+            # Selectores alternativos por si cambia el atributo
+            "div[aria-hidden='true']",
+            # Selectores más generales
+            "div:has-text('$')",
+            "[class*='saldo']",
+            "[class*='balance']",
+            "[class*='disponible']"
+        ]
+        
+        print("🔍 Buscando saldo en la página principal...")
+        
+        for selector in selectores_saldo:
+            try:
+                print(f"   Probando selector: {selector}")
+                elementos = await page.query_selector_all(selector)
+                
+                for elemento in elementos:
+                    texto = await elemento.text_content()
+                    if texto and '$' in texto:
+                        # Limpiar el texto y verificar que sea un saldo válido
+                        texto_limpio = texto.strip()
+                        # Buscar patrones de saldo (ej: $658.356)
+                        patron_saldo = r'\$[\d,\.]+(?:,\d{2})?'
+                        match = re.search(patron_saldo, texto_limpio.replace(' ', ''))
+                        if match:
+                            saldo_texto = match.group()
+                            print(f"💰 Saldo encontrado con selector '{selector}': {saldo_texto}")
+                            saldo_encontrado = saldo_texto
+                            break
+                
+                if saldo_encontrado:
+                    break
+                    
+            except Exception as e:
+                print(f"   Error con selector '{selector}': {e}")
+                continue
+        
+        # Si no encontramos con selectores específicos, buscar en todo el contenido
+        if not saldo_encontrado:
+            print("🔍 Buscando saldo en todo el contenido de la página...")
+            try:
+                contenido_pagina = await page.content()
+                
+                # Buscar específicamente el patrón del ejemplo: $658.356
+                patrones_saldo = [
+                    r'\$[\d,\.]+(?<![\d,\.])',  # Patrón principal para saldos
+                    r'Saldo\s*[:\-]?\s*\$[\d,\.]+',
+                    r'Disponible\s*[:\-]?\s*\$[\d,\.]+',
+                    r'Balance\s*[:\-]?\s*\$[\d,\.]+',
+                ]
+                
+                for patron in patrones_saldo:
+                    matches = re.findall(patron, contenido_pagina, re.IGNORECASE)
+                    if matches:
+                        # Tomar el primer match que parezca un saldo válido
+                        for match in matches:
+                            # Verificar que el match tenga al menos 3 dígitos (para evitar precios pequeños)
+                            numeros = re.findall(r'\d+', match)
+                            if numeros and len(''.join(numeros)) >= 3:
+                                saldo_encontrado = match
+                                print(f"💰 Saldo encontrado en contenido: {saldo_encontrado}")
+                                break
+                        if saldo_encontrado:
+                            break
+                            
+            except Exception as e:
+                print(f"❌ Error buscando saldo en contenido: {e}")
+        
+        if saldo_encontrado:
+            # Normalizar el saldo
+            saldo_normalizado = normalizar_saldo(saldo_encontrado)
+            if saldo_normalizado is not None:
+                print(f"✅ Saldo capturado exitosamente: ${saldo_normalizado:,.2f}")
+                return saldo_normalizado
+            else:
+                print(f"❌ No se pudo normalizar el saldo: {saldo_encontrado}")
+        else:
+            print("❌ No se encontró información de saldo en la página")
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error capturando saldo: {str(e)}")
+        return None
+
+
+def normalizar_saldo(saldo_texto):
+    """Normaliza el texto del saldo a un número float - Formato chileno (punto como separador de miles)"""
+    try:
+        # Limpiar el texto: quitar todo excepto números y puntos
+        saldo_limpio = re.sub(r'[^\d\.]', '', saldo_texto)
+        
+        # En Chile, el punto es separador de miles, NO decimales
+        # Ejemplos: $620.014 = 620014, $1.234.567 = 1234567
+        
+        if '.' in saldo_limpio:
+            # Quitar todos los puntos (separadores de miles)
+            saldo_limpio = saldo_limpio.replace('.', '')
+        
+        # Convertir a float (sin decimales ya que en Chile no se usan)
+        return float(saldo_limpio)
+        
+    except Exception as e:
+        print(f"Error normalizando saldo '{saldo_texto}': {e}")
+        return None
+
+
+def guardar_saldo_estado(account, saldo):
+    """Guarda el saldo de Banco Estado en la base de datos"""
+    try:
+        # Crear identificador único para cada cuenta de Banco Estado
+        nombre_cuenta = f"ESTADO_{account['rutEmpresa']}"
+        
+        print(f"💾 Guardando saldo de {nombre_cuenta}...")
+        print(f"   💰 Saldo actual a guardar: ${saldo:,.2f}")
+        
+        # Inicializar base de datos
+        db = SaldoBancosDB()
+        
+        # Obtener último saldo para comparar
+        ultimo_registro = db.obtener_ultimo_saldo(nombre_cuenta)
+        if ultimo_registro:
+            ultimo_saldo = ultimo_registro['saldo']
+            diferencia = abs(saldo - ultimo_saldo)
+            print(f"   📊 Último saldo en BD: ${ultimo_saldo:,.2f}")
+            print(f"   📈 Diferencia: ${diferencia:,.2f}")
+        else:
+            print(f"   📝 Primera vez registrando {nombre_cuenta}")
+        
+        # Guardar saldo usando la nueva lógica (solo si hay cambios)
+        guardado_db = db.guardar_saldo(nombre_cuenta, saldo)
+        if guardado_db:
+            print(f"💾 ✅ Saldo guardado exitosamente en base de datos: ${saldo:,.2f}")
+        else:
+            print(f"⏭️ ❌ Saldo NO guardado en BD (sin cambios significativos)")
+        
+        return guardado_db
+        
+    except Exception as e:
+        print(f"❌ Error guardando saldo en base de datos: {str(e)}")
+        return False
+
+
 # --------------------------
 # Procesamiento de Cuenta
 # --------------------------
@@ -358,6 +515,16 @@ async def process_account(account, p):
         await page.wait_for_load_state("networkidle")
         await asyncio.sleep(5)
 
+        # *** CAPTURAR SALDO ANTES DE IR A TRANSFERENCIAS ***
+        print("\n🏦 === CAPTURANDO SALDO DE LA CUENTA ===")
+        saldo_capturado = await capturar_saldo_cuenta(page, account)
+        if saldo_capturado:
+            # Guardar saldo en base de datos
+            guardar_saldo_estado(account, saldo_capturado)
+        else:
+            print("⚠️ No se pudo capturar el saldo de la cuenta")
+        
+        print("\n📋 === PROCESANDO TRANSFERENCIAS ===")
         print("Haciendo clic en 'Transferencias'...")
         transferencias_xpath = "//body/be-root/div[@class='app-home']/div[@class='ng-star-inserted']/div[@class='container-home']/div[@class='asd-container-sidebar']/be-menu/asd-menu-sidebar/div[@class='menu-sidebar-home ng-star-inserted']/nav[@class='menu-sidebar-home__content']/ul[@class='link_list']/li[2]/a[1]"
         await page.wait_for_selector(transferencias_xpath, state="visible", timeout=15000)
