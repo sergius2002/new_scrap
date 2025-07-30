@@ -95,3 +95,67 @@ echo "kj6mm866" | ssh root@85.190.254.173 "ss -tlnp | grep 63109"
 - El túnel SSH debe mantenerse activo mientras uses VNC
 - La conexión directa a `5.189.132.158:63109` no funcionará debido al firewall de Contabo
 - Siempre usa `localhost:63109` para conectarte 
+
+---
+
+## 🚀 Optimización de Conexiones SSH (SIN CONTRASEÑAS)
+
+### Configuración de Autenticación por Claves SSH
+
+**✅ Configuración completada:**
+- Claves SSH generadas y configuradas
+- Clave pública copiada al servidor
+- Configuración SSH simplificada en `~/.ssh/config`
+
+### Comandos Simplificados
+
+**Conexión SSH directa:**
+```bash
+ssh contabo
+```
+
+**Túnel VNC simplificado:**
+```bash
+ssh -L 63109:localhost:63109 contabo -N
+```
+
+### Scripts Automatizados
+
+**1. Conectar túnel VNC:**
+```bash
+./conectar_vnc.sh
+```
+
+**2. Verificar estado del servidor:**
+```bash
+./verificar_vnc.sh
+```
+
+**3. Terminar túnel:**
+```bash
+kill $(lsof -ti :63109)
+```
+
+### Configuración SSH (~/.ssh/config)
+```
+Host contabo
+  HostName 85.190.254.173
+  User root
+  IdentityFile ~/.ssh/id_rsa
+  IdentitiesOnly yes
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+```
+
+### Ventajas de la Optimización
+- ✅ **Sin contraseñas**: Conexión automática con claves SSH
+- ✅ **Más seguro**: Autenticación por claves es más segura que contraseñas
+- ✅ **Más rápido**: No hay que esperar a ingresar contraseñas
+- ✅ **Automatizado**: Scripts para facilitar las operaciones comunes
+- ✅ **Persistente**: Configuración guardada para futuras sesiones
+
+### Uso Recomendado
+1. **Para conectar VNC:** `./conectar_vnc.sh`
+2. **Para verificar estado:** `./verificar_vnc.sh`
+3. **Para comandos SSH rápidos:** `ssh contabo "comando"`
+4. **Para terminar túnel:** `kill $(lsof -ti :63109)` 

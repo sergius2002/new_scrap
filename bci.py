@@ -20,11 +20,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Definir los RUTs que no deben subirse a la base de datos
-RUTS_A_ELIMINAR = [
-    "77773448-2",
-    "77469173-1",
-    "77936187-K"
-]
+# RUTS_A_ELIMINAR = [
+#     "77773448-2",
+#     "77469173-1",
+#     "77936187-K"
+# ]
+RUTS_A_ELIMINAR = []
 
 def normalizar_fecha(fecha_str):
     """
