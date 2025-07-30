@@ -375,7 +375,7 @@ async def login_to_bci(page):
         print("🔍 Esperando elementos del formulario...")
         # Esperar y llenar RUT con pausas entre cada carácter
         # Credenciales actuales
-        rut = "25880004-4"
+        rut = "17786044-1"
         # Credenciales provisorias: "17109134-9"
         for char in rut:
             await page.type("input#rut_aux", char, delay=random.randint(20, 50))
