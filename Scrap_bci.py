@@ -381,9 +381,9 @@ async def login_to_bci(page):
         
         print("🔍 Esperando elementos del formulario...")
         # Esperar y llenar RUT con pausas entre cada carácter
-        # Credenciales actuales (usando las anteriores en local)
+        # Credenciales actuales (usando las originales)
         rut = "17109134-9"
-        # Credenciales nuevas: "17786044-1"
+        # Credenciales alternativas: "17786044-1"
         for char in rut:
             await page.type("input#rut_aux", char, delay=random.randint(20, 50))
             await random_delay(0.05, 0.1)
@@ -396,7 +396,7 @@ async def login_to_bci(page):
         
         # Escribir contraseña con pausas variables
         clave = "Kj6mm866"
-        # Contraseña nueva: "Ps178445"
+        # Contraseña alternativa: "Ps178445"
         for char in clave:
             await page.type("input#clave", char, delay=random.randint(30, 70))
             await random_delay(0.05, 0.1)
@@ -934,14 +934,98 @@ def guardar_saldo_en_memoria(saldo):
     
     # Guardar en base de datos (solo si hay diferencias)
     try:
-        from saldo_bancos_db import guardar_saldo_bci
+        from saldo_bancos_db import guardar_saldo_bci, obtener_ultimo_saldo_bci
+        
+        # Mostrar información de diagnóstico
+        print(f"🔍 DIAGNÓSTICO DE GUARDADO:")
+        print(f"   💰 Saldo actual a guardar: ${saldo:,.2f}")
+        
+        # Obtener último saldo para comparar
+        ultimo_registro = obtener_ultimo_saldo_bci()
+        if ultimo_registro:
+            ultimo_saldo = ultimo_registro['saldo']
+            diferencia = abs(saldo - ultimo_saldo)
+            print(f"   📊 Último saldo en BD: ${ultimo_saldo:,.2f}")
+            print(f"   📈 Diferencia: ${diferencia:,.2f}")
+            print(f"   ✅ Diferencia > $0.01: {diferencia >= 0.01}")
+        else:
+            print(f"   ℹ️ No hay registros previos en BD")
+        
+        # Intentar guardar
         guardado_db = guardar_saldo_bci(saldo)
         if guardado_db:
-            print(f"💾 Saldo guardado en base de datos: ${saldo:,.2f}")
+            print(f"💾 ✅ Saldo guardado exitosamente en base de datos: ${saldo:,.2f}")
         else:
-            print(f"⏭️ Saldo no guardado en BD (sin cambios o ya existe hoy)")
+            print(f"⏭️ ❌ Saldo NO guardado en BD")
+            print(f"   🔍 Posibles razones:")
+            print(f"   - Ya existe un registro hoy")
+            print(f"   - Diferencia menor a $0.01")
+            print(f"   - Error de conexión a BD")
     except Exception as e:
-        print(f"⚠️ Error guardando en base de datos: {str(e)}")
+        print(f"⚠️ ❌ Error crítico guardando en base de datos: {str(e)}")
+        import traceback
+        print(f"🔍 Detalles del error: {traceback.format_exc()}")
+
+def diagnosticar_bd_bci():
+    """Función de diagnóstico para revisar el estado de BCI en la base de datos"""
+    try:
+        from saldo_bancos_db import SaldoBancosDB
+        
+        print("\n🔍 === DIAGNÓSTICO COMPLETO BCI ===")
+        
+        db = SaldoBancosDB()
+        
+        # Verificar conexión
+        print("1️⃣ Verificando conexión a base de datos...")
+        try:
+            ultimo = db.obtener_ultimo_saldo("BCI")
+            print("   ✅ Conexión exitosa")
+        except Exception as e:
+            print(f"   ❌ Error de conexión: {e}")
+            return
+        
+        # Mostrar último registro
+        print("\n2️⃣ Último registro en BD:")
+        if ultimo:
+            fecha_ultimo = ultimo['fecha_captura']
+            print(f"   💰 Saldo: ${ultimo['saldo']:,.2f}")
+            print(f"   📅 Fecha: {fecha_ultimo}")
+        else:
+            print("   ℹ️ No hay registros de BCI en la BD")
+        
+        # Verificar si hay registro hoy
+        print("\n3️⃣ Verificando registro de hoy:")
+        existe_hoy = db.verificar_saldo_hoy("BCI")
+        if existe_hoy:
+            print("   ⚠️ Ya existe un registro de BCI para hoy")
+            print("   📝 Esto impide guardar nuevos registros")
+        else:
+            print("   ✅ No hay registro de hoy, se puede guardar")
+        
+        # Mostrar historial reciente
+        print("\n4️⃣ Historial reciente (últimos 5):")
+        historial = db.obtener_historial_saldos("BCI", 5)
+        if historial:
+            for i, registro in enumerate(historial, 1):
+                fecha = registro['fecha_captura'][:19]  # Solo fecha y hora
+                print(f"   {i}. ${registro['saldo']:,.2f} - {fecha}")
+        else:
+            print("   ℹ️ No hay historial disponible")
+        
+        print("\n5️⃣ Estado actual en memoria:")
+        global saldos_memoria
+        if saldos_memoria["ultimo_saldo"]:
+            print(f"   💰 Último saldo en memoria: ${saldos_memoria['ultimo_saldo']:,.2f}")
+            print(f"   📅 Fecha captura: {saldos_memoria['fecha_captura']}")
+        else:
+            print("   ℹ️ No hay saldos en memoria")
+        
+        print("\n================================\n")
+        
+    except Exception as e:
+        print(f"❌ Error en diagnóstico: {e}")
+        import traceback
+        print(f"🔍 Detalles: {traceback.format_exc()}")
 
 def obtener_saldo_actual():
     """Obtiene el último saldo capturado"""

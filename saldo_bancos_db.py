@@ -106,12 +106,7 @@ class SaldoBancosDB:
             # Convertir saldo a Decimal para mayor precisión
             saldo_decimal = Decimal(str(saldo))
             
-            # Si no se fuerza, verificar si ya existe un registro hoy
-            if not forzar and self.verificar_saldo_hoy(banco):
-                logger.info(f"⏭️ Ya existe un registro de {banco} para hoy. No se guardará.")
-                return False
-            
-            # Obtener último saldo para comparar
+            # Obtener último saldo para comparar (SIEMPRE verificamos cambios)
             ultimo_registro = self.obtener_ultimo_saldo(banco)
             
             if not forzar and ultimo_registro:
@@ -124,7 +119,9 @@ class SaldoBancosDB:
                     logger.info(f"⏭️ El saldo de {banco} no ha cambiado (${saldo_decimal}). No se guardará.")
                     return False
                 else:
-                    logger.info(f"💰 Saldo de {banco} cambió: ${ultimo_saldo} → ${saldo_decimal}")
+                    logger.info(f"💰 Saldo de {banco} cambió: ${ultimo_saldo} → ${saldo_decimal} (diferencia: ${diferencia})")
+            elif not ultimo_registro:
+                logger.info(f"🆕 Primer saldo de {banco}: ${saldo_decimal}")
             
             # Preparar datos para insertar
             data = {
