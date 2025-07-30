@@ -15,6 +15,13 @@ import gc
 import psutil
 from pathlib import Path
 
+# Variable global para almacenar saldos en memoria
+saldos_memoria = {
+    "ultimo_saldo": None,
+    "fecha_captura": None,
+    "historial": []
+}
+
 # Obtener la ruta del directorio actual
 current_dir = Path(__file__).parent.absolute()
 
@@ -374,9 +381,9 @@ async def login_to_bci(page):
         
         print("🔍 Esperando elementos del formulario...")
         # Esperar y llenar RUT con pausas entre cada carácter
-        # Credenciales actuales
-        rut = "17786044-1"
-        # Credenciales provisorias: "17109134-9"
+        # Credenciales actuales (usando las anteriores en local)
+        rut = "17109134-9"
+        # Credenciales nuevas: "17786044-1"
         for char in rut:
             await page.type("input#rut_aux", char, delay=random.randint(20, 50))
             await random_delay(0.05, 0.1)
@@ -388,8 +395,8 @@ async def login_to_bci(page):
         await random_delay(0.2, 0.5)
         
         # Escribir contraseña con pausas variables
-        clave = "Ps178445"
-        # Contraseña provisoria: "Kj6mm866"
+        clave = "Kj6mm866"
+        # Contraseña nueva: "Ps178445"
         for char in clave:
             await page.type("input#clave", char, delay=random.randint(30, 70))
             await random_delay(0.05, 0.1)
@@ -537,12 +544,26 @@ async def monitor_table_changes():
                         print("⚠️ Error en descarga, reintentando...")
                         continue
                     
+                    # Extraer saldo del archivo Excel descargado
+                    try:
+                        archivo_excel = "/Users/sergioplaza/Documents/new_scrap/Bancos/excel_detallado.xlsx"
+                        saldo_capturado = extraer_saldo_del_excel(archivo_excel)
+                        if saldo_capturado:
+                            print(f"💰 Saldo actual extraído del Excel: ${saldo_capturado:,.2f}")
+                        else:
+                            print("⚠️ No se pudo extraer el saldo del archivo Excel")
+                    except Exception as e:
+                        print(f"⚠️ Error extrayendo saldo del Excel: {str(e)}")
+                    
                     # Procesar archivo descargado
                     print("✅ Proceso BCI completado. Ejecutando bci.py...")
                     script_dir = os.path.dirname(os.path.abspath(__file__))
                     bci_script = os.path.join(script_dir, "bci.py")
                     print(f"📁 Ejecutando bci.py desde: {bci_script}")
                     subprocess.run(["python3", bci_script])
+                    
+                    # Mostrar resumen de saldos después de cada ciclo
+                    mostrar_resumen_saldos()
                     
                     # Recargar página para la siguiente iteración
                     print("🔄 Recargando página para siguiente ciclo...")
@@ -705,6 +726,263 @@ async def check_session_active(page):
             
     except Exception:
         return False
+
+async def capturar_saldo_cuenta(page):
+    """Captura el saldo de la cuenta corriente desde la interfaz web"""
+    try:
+        print("💰 Iniciando captura de saldo de cuenta corriente...")
+        
+        # Obtener el iframe principal
+        await page.wait_for_selector("iframe#iframeContenido", timeout=10000)
+        iframe_element = await page.query_selector("iframe#iframeContenido")
+        iframe = await iframe_element.content_frame()
+        
+        if not iframe:
+            print("❌ No se pudo acceder al iframe principal para capturar saldo")
+            return None
+            
+        # Buscar elementos que contengan información de saldo
+        # Intentar diferentes selectores comunes para saldos
+        selectores_saldo = [
+            # Selectores específicos para BCI
+            ".saldo-disponible",
+            ".balance-amount",
+            ".account-balance",
+            "[class*='saldo']",
+            "[class*='balance']",
+            "[class*='disponible']",
+            # Selectores más generales
+            "span:has-text('$')",
+            "div:has-text('$')",
+            "td:has-text('$')",
+            # Buscar por texto que contenga números y signos de peso
+            "text=/\\$[\\d,\\.]+/"
+        ]
+        
+        saldo_encontrado = None
+        
+        for selector in selectores_saldo:
+            try:
+                elementos = await iframe.query_selector_all(selector)
+                for elemento in elementos:
+                    texto = await elemento.text_content()
+                    if texto and '$' in texto:
+                        # Limpiar y extraer el número
+                        import re
+                        # Buscar patrones como $123,456.78 o $123.456,78
+                        patron_saldo = r'\$[\d,\.]+(?:,\d{2})?'
+                        match = re.search(patron_saldo, texto.replace(' ', ''))
+                        if match:
+                            saldo_texto = match.group()
+                            print(f"💰 Saldo encontrado con selector '{selector}': {saldo_texto}")
+                            saldo_encontrado = saldo_texto
+                            break
+                
+                if saldo_encontrado:
+                    break
+                    
+            except Exception as e:
+                continue
+        
+        # Si no encontramos saldo con selectores específicos, buscar en todo el contenido
+        if not saldo_encontrado:
+            try:
+                contenido_pagina = await iframe.content()
+                import re
+                # Buscar patrones de saldo en todo el contenido
+                patrones_saldo = [
+                    r'Saldo\s*[:\-]?\s*\$[\d,\.]+',
+                    r'Disponible\s*[:\-]?\s*\$[\d,\.]+',
+                    r'Balance\s*[:\-]?\s*\$[\d,\.]+',
+                    r'\$[\d,\.]+(?:\.\d{2})?'
+                ]
+                
+                for patron in patrones_saldo:
+                    matches = re.findall(patron, contenido_pagina, re.IGNORECASE)
+                    if matches:
+                        saldo_encontrado = matches[0]
+                        print(f"💰 Saldo encontrado en contenido: {saldo_encontrado}")
+                        break
+                        
+            except Exception as e:
+                print(f"❌ Error buscando saldo en contenido: {e}")
+        
+        if saldo_encontrado:
+            # Normalizar el saldo
+            saldo_normalizado = normalizar_saldo(saldo_encontrado)
+            if saldo_normalizado is not None:
+                # Guardar en memoria
+                guardar_saldo_en_memoria(saldo_normalizado)
+                print(f"✅ Saldo capturado y guardado: ${saldo_normalizado:,.2f}")
+                return saldo_normalizado
+            else:
+                print(f"❌ No se pudo normalizar el saldo: {saldo_encontrado}")
+        else:
+            print("❌ No se encontró información de saldo en la página")
+            
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error capturando saldo: {str(e)}")
+        return None
+
+def extraer_saldo_del_excel(archivo_excel):
+    """Extrae el saldo de la celda K2 del archivo Excel descargado"""
+    try:
+        import pandas as pd
+        import os
+        
+        # Verificar que el archivo existe
+        if not os.path.exists(archivo_excel):
+            print(f"❌ Archivo Excel no encontrado: {archivo_excel}")
+            return None
+        
+        print(f"💰 Extrayendo saldo del archivo Excel: {archivo_excel}")
+        
+        # Leer el archivo Excel
+        df = pd.read_excel(archivo_excel)
+        
+        # El saldo está en la celda K2 (columna K, fila 2)
+        # En pandas, esto corresponde a la columna "Saldo contable" (índice 10) y fila 1 (índice 1)
+        if len(df) > 1 and 'Saldo contable' in df.columns:
+            saldo_celda = df.loc[1, 'Saldo contable']  # Fila 2 (índice 1)
+            
+            if pd.notna(saldo_celda):
+                # Normalizar el saldo
+                if isinstance(saldo_celda, (int, float)):
+                    saldo_normalizado = float(saldo_celda)
+                else:
+                    saldo_normalizado = normalizar_saldo(str(saldo_celda))
+                
+                if saldo_normalizado is not None:
+                    # Guardar en memoria
+                    guardar_saldo_en_memoria(saldo_normalizado)
+                    print(f"✅ Saldo extraído del Excel: ${saldo_normalizado:,.2f}")
+                    return saldo_normalizado
+                else:
+                    print(f"❌ No se pudo normalizar el saldo del Excel: {saldo_celda}")
+            else:
+                print("❌ La celda K2 está vacía en el archivo Excel")
+        else:
+            print("❌ No se encontró la columna 'Saldo contable' o no hay suficientes filas")
+            print(f"Columnas disponibles: {list(df.columns)}")
+            print(f"Número de filas: {len(df)}")
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error extrayendo saldo del Excel: {str(e)}")
+        return None
+
+def normalizar_saldo(saldo_texto):
+    """Normaliza el texto del saldo a un número float"""
+    try:
+        import re
+        # Remover símbolos y espacios
+        saldo_limpio = re.sub(r'[^\d,\.]', '', saldo_texto)
+        
+        # Manejar diferentes formatos (123,456.78 vs 123.456,78)
+        if ',' in saldo_limpio and '.' in saldo_limpio:
+            # Determinar cuál es el separador decimal
+            ultima_coma = saldo_limpio.rfind(',')
+            ultimo_punto = saldo_limpio.rfind('.')
+            
+            if ultimo_punto > ultima_coma:
+                # Formato 123,456.78
+                saldo_limpio = saldo_limpio.replace(',', '')
+            else:
+                # Formato 123.456,78
+                saldo_limpio = saldo_limpio.replace('.', '').replace(',', '.')
+        elif ',' in saldo_limpio:
+            # Solo comas - podría ser separador de miles o decimal
+            partes = saldo_limpio.split(',')
+            if len(partes) == 2 and len(partes[1]) == 2:
+                # Probablemente decimal (123,45)
+                saldo_limpio = saldo_limpio.replace(',', '.')
+            else:
+                # Probablemente separador de miles
+                saldo_limpio = saldo_limpio.replace(',', '')
+        
+        return float(saldo_limpio)
+        
+    except Exception as e:
+        print(f"Error normalizando saldo '{saldo_texto}': {e}")
+        return None
+
+def guardar_saldo_en_memoria(saldo):
+    """Guarda el saldo en la variable global de memoria y en la base de datos"""
+    global saldos_memoria
+    
+    fecha_actual = datetime.now()
+    
+    # Actualizar último saldo
+    saldos_memoria["ultimo_saldo"] = saldo
+    saldos_memoria["fecha_captura"] = fecha_actual.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Agregar al historial (mantener solo los últimos 50 registros)
+    saldos_memoria["historial"].append({
+        "saldo": saldo,
+        "fecha": fecha_actual.strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": fecha_actual.timestamp()
+    })
+    
+    # Mantener solo los últimos 50 registros
+    if len(saldos_memoria["historial"]) > 50:
+        saldos_memoria["historial"] = saldos_memoria["historial"][-50:]
+    
+    print(f"📊 Saldo guardado en memoria: ${saldo:,.2f} a las {saldos_memoria['fecha_captura']}")
+    
+    # Guardar en base de datos (solo si hay diferencias)
+    try:
+        from saldo_bancos_db import guardar_saldo_bci
+        guardado_db = guardar_saldo_bci(saldo)
+        if guardado_db:
+            print(f"💾 Saldo guardado en base de datos: ${saldo:,.2f}")
+        else:
+            print(f"⏭️ Saldo no guardado en BD (sin cambios o ya existe hoy)")
+    except Exception as e:
+        print(f"⚠️ Error guardando en base de datos: {str(e)}")
+
+def obtener_saldo_actual():
+    """Obtiene el último saldo capturado"""
+    global saldos_memoria
+    return saldos_memoria
+
+def mostrar_resumen_saldos():
+    """Muestra un resumen de los saldos capturados en memoria y base de datos"""
+    global saldos_memoria
+    
+    if not saldos_memoria["ultimo_saldo"]:
+        print("📊 No hay saldos capturados aún en memoria")
+    else:
+        print(f"\n📊 === RESUMEN DE SALDOS EN MEMORIA ===")
+        print(f"💰 Último saldo: ${saldos_memoria['ultimo_saldo']:,.2f}")
+        print(f"🕐 Fecha captura: {saldos_memoria['fecha_captura']}")
+        print(f"📈 Registros en historial: {len(saldos_memoria['historial'])}")
+        
+        if len(saldos_memoria["historial"]) > 1:
+            primer_saldo = saldos_memoria["historial"][0]["saldo"]
+            ultimo_saldo = saldos_memoria["historial"][-1]["saldo"]
+            diferencia = ultimo_saldo - primer_saldo
+            
+            print(f"📊 Primer saldo del historial: ${primer_saldo:,.2f}")
+            print(f"📊 Diferencia: ${diferencia:,.2f}")
+            
+            if diferencia > 0:
+                print(f"📈 Tendencia: Incremento de ${diferencia:,.2f}")
+            elif diferencia < 0:
+                print(f"📉 Tendencia: Disminución de ${abs(diferencia):,.2f}")
+            else:
+                print(f"➡️ Tendencia: Sin cambios")
+        
+        print(f"========================\n")
+    
+    # Mostrar resumen de base de datos
+    try:
+        from saldo_bancos_db import mostrar_resumen_bci
+        mostrar_resumen_bci()
+    except Exception as e:
+        print(f"⚠️ Error mostrando resumen de base de datos: {str(e)}")
 
 async def navigate_to_download_section(page):
     """Navega a la sección de descarga"""
@@ -879,6 +1157,11 @@ async def monitor_table_changes_with_retry():
 if __name__ == "__main__":
     print("🤖 Iniciando automatización BCI...")
     print(f"📅 Fecha y hora de inicio: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Mostrar estado inicial de saldos
+    print("\n💰 Estado inicial de saldos en memoria:")
+    mostrar_resumen_saldos()
+    print()
     try:
         asyncio.run(monitor_table_changes_with_retry())
     except KeyboardInterrupt:
