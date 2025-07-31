@@ -60,11 +60,21 @@ async def click_with_retries(page, frame, selector, max_retries=3):
 async def get_target_frame(page):
     """Obtiene un frame cuyo URL contenga 'appempresas.bancoestado.cl' o retorna None."""
     frames = page.frames
-    for frame in frames:
+    print(f"🔍 DEBUG: Total de frames encontrados: {len(frames)}")
+    
+    for i, frame in enumerate(frames):
+        print(f"🔍 DEBUG: Frame {i+1}: {frame.url}")
         if re.search(r"appempresas\.bancoestado\.cl", frame.url):
-            print(f"Frame objetivo encontrado: {frame.url}")
+            print(f"✅ Frame objetivo encontrado: {frame.url}")
             return frame
-    print("No se encontró el frame objetivo.")
+    
+    print("❌ No se encontró el frame objetivo.")
+    print("🔍 DEBUG: Buscando frames que contengan 'bancoestado'...")
+    
+    for i, frame in enumerate(frames):
+        if "bancoestado" in frame.url.lower():
+            print(f"🔍 DEBUG: Frame con 'bancoestado' encontrado {i+1}: {frame.url}")
+    
     return None
 
 
@@ -493,8 +503,21 @@ async def process_account(account, p):
             "https://www.bancoestado.cl/content/bancoestado-public/cl/es/home/inicio---bancoestado-empresas.html#/login-empresa",
             wait_until="networkidle")
         await page.wait_for_load_state("networkidle")
-
-        target_frame = await get_target_frame(page)
+        
+        # Esperar adicional para que los frames se carguen completamente
+        print("⏳ Esperando a que los frames se carguen completamente...")
+        await asyncio.sleep(10)  # Espera adicional de 10 segundos
+        
+        # Intentar múltiples veces encontrar el frame
+        target_frame = None
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            print(f"🔍 Intento {attempt + 1}/{max_attempts} para encontrar el frame...")
+            target_frame = await get_target_frame(page)
+            if target_frame:
+                break
+            print(f"⏳ Frame no encontrado, esperando 5 segundos antes del siguiente intento...")
+            await asyncio.sleep(5)
         if not target_frame:
             print("No se encontró el frame de login.")
             return account_transfers
