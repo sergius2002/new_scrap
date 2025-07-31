@@ -381,9 +381,9 @@ async def login_to_bci(page):
         
         print("🔍 Esperando elementos del formulario...")
         # Esperar y llenar RUT con pausas entre cada carácter
-        # Credenciales actuales (usando las originales)
-        rut = "17109134-9"
-        # Credenciales alternativas: "17786044-1"
+        # Credenciales actuales (actualizadas)
+        rut = "25.880.004-4"
+        # Credenciales anteriores: "17109134-9", "17786044-1"
         for char in rut:
             await page.type("input#rut_aux", char, delay=random.randint(20, 50))
             await random_delay(0.05, 0.1)
@@ -395,8 +395,8 @@ async def login_to_bci(page):
         await random_delay(0.2, 0.5)
         
         # Escribir contraseña con pausas variables
-        clave = "Kj6mm866"
-        # Contraseña alternativa: "Ps178445"
+        clave = "Ps178445"
+        # Contraseña anterior: "Kj6mm866"
         for char in clave:
             await page.type("input#clave", char, delay=random.randint(30, 70))
             await random_delay(0.05, 0.1)

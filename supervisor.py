@@ -42,7 +42,7 @@ ALL_SCRIPTS = [
 # Scripts habilitados (modificar esta lista para controlar qué scripts se ejecutan)
 ENABLED_SCRIPTS = [
     "Scrap_bci.py",
-    "Scrap_santander.py",
+    # "Scrap_santander.py",  # DESHABILITADO por solicitud del usuario
     "Scrap_estado.py",
     "Facturador_lioren.py"
 ]
