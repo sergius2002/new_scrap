@@ -563,8 +563,17 @@ async def monitor_table_changes():
                     print("✅ Proceso BCI completado. Ejecutando bci.py...")
                     script_dir = os.path.dirname(os.path.abspath(__file__))
                     bci_script = os.path.join(script_dir, "bci.py")
-                    print(f"📁 Ejecutando bci.py desde: {bci_script}")
-                    subprocess.run(["python3", bci_script])
+                    
+                    # Usar el Python del entorno virtual si existe
+                    venv_python = os.path.join(script_dir, "venv", "bin", "python3")
+                    if os.path.exists(venv_python):
+                        python_executable = venv_python
+                        print(f"📁 Ejecutando bci.py con entorno virtual: {bci_script}")
+                    else:
+                        python_executable = "python3"
+                        print(f"📁 Ejecutando bci.py con python del sistema: {bci_script}")
+                    
+                    subprocess.run([python_executable, bci_script])
                     
                     # Mostrar resumen de saldos después de cada ciclo
                     mostrar_resumen_saldos()
