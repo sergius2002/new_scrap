@@ -539,37 +539,22 @@ async def monitor_table_changes():
                         else:
                             print("✅ Login exitoso y sesión activa detectada")
                     
-                    # Intentar capturar el saldo directamente de la interfaz web
-                    print("💰 Intentando capturar saldo directamente de la interfaz web...")
+                    # Capturar el saldo directamente de la interfaz web
+                    print("💰 Capturando saldo desde la interfaz web...")
                     saldo_web = await capturar_saldo_cuenta(page)
                     if saldo_web:
-                        print(f"✅ Saldo capturado directamente de la web: ${saldo_web:,.2f}")
+                        print(f"✅ Saldo capturado desde la web: ${saldo_web:,.2f}")
                     else:
-                        print("ℹ️ No se pudo capturar el saldo de la web, intentando con descarga de Excel...")
+                        print("⚠️ No se pudo capturar el saldo de la web")
                     
-                    # Navegar a la sección de descarga (solo si no estamos ya ahí)
+                    # Navegar a la sección de descarga para obtener las transacciones
                     await navigate_to_download_section(page)
                     
-                    # Descargar archivo
+                    # Descargar archivo para procesar transacciones
                     download_success = await download_file(page)
                     if not download_success:
                         print("⚠️ Error en descarga, reintentando...")
                         continue
-                    
-                    # Extraer saldo del archivo Excel descargado
-                    try:
-                        # Usar ruta relativa al directorio actual del script
-                        current_dir = os.path.dirname(os.path.abspath(__file__))
-                        archivo_excel = os.path.join(current_dir, "Bancos", "excel_detallado.xlsx")
-                        saldo_capturado = extraer_saldo_del_excel(archivo_excel)
-                        if saldo_capturado:
-                            print(f"💰 Saldo actual extraído del Excel: ${saldo_capturado:,.2f}")
-                            # Guardar el saldo automáticamente
-                            guardar_saldo_en_memoria(saldo_capturado)
-                        else:
-                            print("⚠️ No se pudo extraer el saldo del archivo Excel")
-                    except Exception as e:
-                        print(f"⚠️ Error extrayendo saldo del Excel: {str(e)}")
                     
                     # Procesar archivo descargado
                     print("✅ Proceso BCI completado. Ejecutando bci.py...")
@@ -913,53 +898,7 @@ async def capturar_saldo_widget_especifico(page):
         print(f"❌ Error capturando saldo desde widget específico: {str(e)}")
         return None
 
-def extraer_saldo_del_excel(archivo_excel):
-    """Extrae el saldo de la celda K2 del archivo Excel descargado"""
-    try:
-        import pandas as pd
-        import os
-        
-        # Verificar que el archivo existe
-        if not os.path.exists(archivo_excel):
-            print(f"❌ Archivo Excel no encontrado: {archivo_excel}")
-            return None
-        
-        print(f"💰 Extrayendo saldo del archivo Excel: {archivo_excel}")
-        
-        # Leer el archivo Excel
-        df = pd.read_excel(archivo_excel)
-        
-        # El saldo está en la celda K2 (columna K, fila 2)
-        # En pandas, esto corresponde a la columna "Saldo contable" (índice 10) y fila 1 (índice 1)
-        if len(df) > 1 and 'Saldo contable' in df.columns:
-            saldo_celda = df.loc[1, 'Saldo contable']  # Fila 2 (índice 1)
-            
-            if pd.notna(saldo_celda):
-                # Normalizar el saldo
-                if isinstance(saldo_celda, (int, float)):
-                    saldo_normalizado = float(saldo_celda)
-                else:
-                    saldo_normalizado = normalizar_saldo(str(saldo_celda))
-                
-                if saldo_normalizado is not None:
-                    # Guardar en memoria
-                    guardar_saldo_en_memoria(saldo_normalizado)
-                    print(f"✅ Saldo extraído del Excel: ${saldo_normalizado:,.2f}")
-                    return saldo_normalizado
-                else:
-                    print(f"❌ No se pudo normalizar el saldo del Excel: {saldo_celda}")
-            else:
-                print("❌ La celda K2 está vacía en el archivo Excel")
-        else:
-            print("❌ No se encontró la columna 'Saldo contable' o no hay suficientes filas")
-            print(f"Columnas disponibles: {list(df.columns)}")
-            print(f"Número de filas: {len(df)}")
-        
-        return None
-        
-    except Exception as e:
-        print(f"❌ Error extrayendo saldo del Excel: {str(e)}")
-        return None
+
 
 def normalizar_saldo(saldo_texto):
     """Normaliza el texto del saldo a un número float"""
