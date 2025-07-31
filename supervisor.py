@@ -162,10 +162,19 @@ def restart_script(script_name):
             send_notification(f"Error crítico: {script_name}", error_msg)
             return False
         
-        # Iniciar el proceso
+        # Iniciar el proceso usando el entorno virtual
         try:
+            # Usar el python del entorno virtual
+            venv_python = current_dir / "venv" / "bin" / "python3"
+            if venv_python.exists():
+                python_cmd = str(venv_python)
+                logging.info(f"Usando Python del entorno virtual: {python_cmd}")
+            else:
+                python_cmd = "python3"
+                logging.warning(f"Entorno virtual no encontrado, usando Python del sistema")
+            
             process = subprocess.Popen(
-                ["python3", str(script_path)],
+                [python_cmd, str(script_path)],
                 cwd=str(current_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

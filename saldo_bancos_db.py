@@ -92,7 +92,7 @@ class SaldoBancosDB:
     def guardar_saldo(self, banco, saldo, forzar=False):
         """
         Guarda un nuevo saldo en la base de datos solo si es diferente al último registrado
-        o si se fuerza el guardado
+        o si se fuerza el guardado. No verifica si ya existe un registro para hoy.
         
         Args:
             banco (str): Nombre del banco
@@ -103,6 +103,8 @@ class SaldoBancosDB:
             bool: True si se guardó exitosamente, False en caso contrario
         """
         try:
+            # Se eliminó la verificación de registro existente para hoy
+            
             # Convertir saldo a Decimal para mayor precisión
             saldo_decimal = Decimal(str(saldo))
             

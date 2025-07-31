@@ -6,6 +6,7 @@
 - **Contraseña VNC:** rxyKY8xZ
 - **Usuario SSH:** root
 - **Contraseña SSH:** kj6mm866
+- **Directorio del proyecto:** `/home/scraper/new_scrap/`
 
 ## Conexión mediante SSH Túnel
 
@@ -158,4 +159,30 @@ Host contabo
 1. **Para conectar VNC:** `./conectar_vnc.sh`
 2. **Para verificar estado:** `./verificar_vnc.sh`
 3. **Para comandos SSH rápidos:** `ssh contabo "comando"`
-4. **Para terminar túnel:** `kill $(lsof -ti :63109)` 
+4. **Para terminar túnel:** `kill $(lsof -ti :63109)`
+
+## 📁 Gestión del Proyecto en el Servidor
+
+### Directorio del Proyecto
+- **Ubicación:** `/home/scraper/new_scrap/`
+
+### Comandos Git en el Servidor
+```bash
+# Actualizar código desde repositorio
+ssh contabo "cd /home/scraper/new_scrap && git pull origin main"
+
+# Verificar estado del repositorio
+ssh contabo "cd /home/scraper/new_scrap && git status"
+
+# Ver últimos commits
+ssh contabo "cd /home/scraper/new_scrap && git log --oneline -5"
+```
+
+### Comandos de Gestión de Procesos
+```bash
+# Verificar procesos activos
+ssh contabo "cd /home/scraper/new_scrap && python3 supervisor.py --status"
+
+# Reiniciar supervisor
+ssh contabo "cd /home/scraper/new_scrap && pkill -f supervisor.py && nohup python3 supervisor.py &"
+```
