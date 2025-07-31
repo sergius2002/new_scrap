@@ -550,6 +550,8 @@ async def monitor_table_changes():
                         saldo_capturado = extraer_saldo_del_excel(archivo_excel)
                         if saldo_capturado:
                             print(f"💰 Saldo actual extraído del Excel: ${saldo_capturado:,.2f}")
+                            # Guardar el saldo automáticamente
+                            guardar_saldo_en_memoria(saldo_capturado)
                         else:
                             print("⚠️ No se pudo extraer el saldo del archivo Excel")
                     except Exception as e:
