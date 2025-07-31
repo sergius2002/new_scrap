@@ -5,7 +5,7 @@ import subprocess
 import time
 import psutil
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import sys
 from pathlib import Path
@@ -61,10 +61,25 @@ script_stats = {}  # {script_name: {'start_time': datetime, 'restart_count': 0}}
 
 def check_script(script_name):
     """Verifica si un script está en ejecución."""
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        if proc.info['cmdline'] and script_name in ' '.join(proc.info['cmdline']):
-            return True
-    return False
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'status']):
+            try:
+                if proc.info['cmdline']:
+                    cmdline = ' '.join(proc.info['cmdline'])
+                    # Verificar que sea exactamente nuestro script y que esté corriendo
+                    if (script_name in cmdline and 
+                        'python' in cmdline.lower() and 
+                        proc.info['status'] in ['running', 'sleeping']):
+                        # Verificar que el proceso no sea zombie o terminado
+                        if proc.is_running():
+                            logging.debug(f"Script {script_name} encontrado corriendo (PID: {proc.info['pid']})")
+                            return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        return False
+    except Exception as e:
+        logging.error(f"Error verificando script {script_name}: {e}")
+        return False
 
 def obtener_servicio_gmail():
     """Obtiene el servicio de Gmail usando las credenciales de Lioren."""
@@ -127,7 +142,7 @@ def send_notification(subject, message):
         logging.error(f"Error enviando notificación: {e}")
 
 def restart_script(script_name):
-    """Reinicia un script."""
+    """Reinicia un script y verifica que se inicie correctamente."""
     try:
         # Actualizar estadísticas
         if script_name not in script_stats:
@@ -137,24 +152,69 @@ def restart_script(script_name):
             script_stats[script_name]['start_time'] = datetime.now()
         
         restart_count = script_stats[script_name]['restart_count']
-        logging.info(f"Reiniciando {script_name} (reinicio #{restart_count})")
+        logging.info(f"Iniciando {script_name} (intento #{restart_count + 1})")
         
-        # Enviar notificación solo si es el primer reinicio o cada 5 reinicios
-        if restart_count == 1 or restart_count % 5 == 0:
-            send_notification(
-                f"Script caído: {script_name}", 
-                f"El script {script_name} se cayó y está siendo reiniciado automáticamente.\nReinicio #{restart_count}"
+        # Verificar que el archivo existe
+        script_path = current_dir / script_name
+        if not script_path.exists():
+            error_msg = f"El archivo {script_name} no existe en {current_dir}"
+            logging.error(error_msg)
+            send_notification(f"Error crítico: {script_name}", error_msg)
+            return False
+        
+        # Iniciar el proceso
+        try:
+            process = subprocess.Popen(
+                ["python3", str(script_path)],
+                cwd=str(current_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
-        
-        # Usar python3 explícitamente y el directorio actual
-        subprocess.Popen(
-            ["python3", str(current_dir / script_name)],
-            cwd=str(current_dir)
-        )
-        return True
+            
+            # Esperar un momento para verificar que el proceso no falle inmediatamente
+            time.sleep(3)
+            
+            # Verificar si el proceso sigue corriendo
+            poll_result = process.poll()
+            if poll_result is not None:
+                # El proceso terminó inmediatamente
+                stdout, stderr = process.communicate()
+                error_msg = f"El script {script_name} falló al iniciar.\nCódigo de salida: {poll_result}\nError: {stderr}\nSalida: {stdout}"
+                logging.error(error_msg)
+                
+                # Enviar notificación solo si es el primer fallo o cada 3 fallos
+                if restart_count == 0 or restart_count % 3 == 0:
+                    send_notification(f"Fallo al iniciar: {script_name}", error_msg)
+                return False
+            
+            # Verificar que el proceso esté realmente corriendo usando check_script
+            time.sleep(2)  # Dar tiempo adicional para que el script se establezca
+            if check_script(script_name):
+                logging.info(f"✅ {script_name} iniciado correctamente (PID: {process.pid})")
+                
+                # Enviar notificación solo si es el primer reinicio o cada 5 reinicios
+                if restart_count == 1 or restart_count % 5 == 0:
+                    send_notification(
+                        f"Script reiniciado: {script_name}", 
+                        f"El script {script_name} ha sido reiniciado exitosamente.\nReinicio #{restart_count}\nPID: {process.pid}"
+                    )
+                return True
+            else:
+                error_msg = f"El script {script_name} se inició pero no se detecta en la lista de procesos"
+                logging.warning(error_msg)
+                return False
+                
+        except subprocess.SubprocessError as e:
+            error_msg = f"Error al ejecutar {script_name}: {e}"
+            logging.error(error_msg)
+            send_notification(f"Error de ejecución: {script_name}", error_msg)
+            return False
+            
     except Exception as e:
-        logging.error(f"Error al reiniciar {script_name}: {e}")
-        send_notification(f"Error crítico: {script_name}", f"No se pudo reiniciar {script_name}: {e}")
+        error_msg = f"Error crítico al reiniciar {script_name}: {e}"
+        logging.error(error_msg)
+        send_notification(f"Error crítico: {script_name}", error_msg)
         return False
 
 def cleanup_resources():
@@ -235,11 +295,17 @@ def main():
     logging.info("Iniciando supervisor de scripts...")
     logging.info(f"Scripts habilitados: {', '.join(ENABLED_SCRIPTS)}")
     
+    # Diccionario para rastrear fallos consecutivos y tiempos de espera
+    script_failures = {script: {'consecutive_failures': 0, 'last_attempt': None} for script in ENABLED_SCRIPTS}
+    
     # Iniciar todos los scripts habilitados al comienzo
     for script in ENABLED_SCRIPTS:
         if not check_script(script):
             logging.info(f"Iniciando {script} por primera vez")
-            restart_script(script)
+            success = restart_script(script)
+            if not success:
+                script_failures[script]['consecutive_failures'] = 1
+                script_failures[script]['last_attempt'] = datetime.now()
     
     last_cleanup = datetime.now()
     last_report = datetime.now()
@@ -251,8 +317,43 @@ def main():
             # Verificar cada script habilitado
             for script in ENABLED_SCRIPTS:
                 if not check_script(script):
-                    logging.warning(f"{script} no está en ejecución")
-                    restart_script(script)
+                    # Calcular tiempo de espera progresiva basado en fallos consecutivos
+                    failures = script_failures[script]['consecutive_failures']
+                    last_attempt = script_failures[script]['last_attempt']
+                    
+                    # Espera progresiva: 1min, 2min, 5min, 10min, 15min, luego 30min
+                    wait_times = [60, 120, 300, 600, 900, 1800]  # en segundos
+                    wait_time = wait_times[min(failures, len(wait_times) - 1)]
+                    
+                    # Verificar si ha pasado suficiente tiempo desde el último intento
+                    if last_attempt is None or (current_time - last_attempt).total_seconds() >= wait_time:
+                        logging.warning(f"{script} no está en ejecución (fallos consecutivos: {failures})")
+                        success = restart_script(script)
+                        
+                        if success:
+                            # Reiniciar contador de fallos si el script se inició exitosamente
+                            script_failures[script]['consecutive_failures'] = 0
+                            script_failures[script]['last_attempt'] = None
+                        else:
+                            # Incrementar contador de fallos
+                            script_failures[script]['consecutive_failures'] += 1
+                            script_failures[script]['last_attempt'] = current_time
+                            
+                            # Log del próximo intento
+                            next_wait = wait_times[min(script_failures[script]['consecutive_failures'], len(wait_times) - 1)]
+                            next_attempt = current_time + timedelta(seconds=next_wait)
+                            logging.info(f"Próximo intento para {script}: {next_attempt.strftime('%H:%M:%S')} (en {next_wait//60} minutos)")
+                    else:
+                        # Calcular tiempo restante
+                        time_since_attempt = (current_time - last_attempt).total_seconds()
+                        remaining_time = wait_time - time_since_attempt
+                        logging.debug(f"Esperando {remaining_time//60:.0f}m {remaining_time%60:.0f}s antes del próximo intento para {script}")
+                else:
+                    # El script está corriendo, reiniciar contador de fallos si había alguno
+                    if script_failures[script]['consecutive_failures'] > 0:
+                        logging.info(f"✅ {script} se recuperó después de {script_failures[script]['consecutive_failures']} fallos")
+                        script_failures[script]['consecutive_failures'] = 0
+                        script_failures[script]['last_attempt'] = None
             
             # Limpiar recursos cada 5 minutos
             if (current_time - last_cleanup).total_seconds() >= 300:
@@ -272,4 +373,4 @@ def main():
             time.sleep(300)  # Esperar 5 minutos en caso de error
 
 if __name__ == "__main__":
-    main() 
+    main()
