@@ -539,6 +539,14 @@ async def monitor_table_changes():
                         else:
                             print("✅ Login exitoso y sesión activa detectada")
                     
+                    # Intentar capturar el saldo directamente de la interfaz web
+                    print("💰 Intentando capturar saldo directamente de la interfaz web...")
+                    saldo_web = await capturar_saldo_cuenta(page)
+                    if saldo_web:
+                        print(f"✅ Saldo capturado directamente de la web: ${saldo_web:,.2f}")
+                    else:
+                        print("ℹ️ No se pudo capturar el saldo de la web, intentando con descarga de Excel...")
+                    
                     # Navegar a la sección de descarga (solo si no estamos ya ahí)
                     await navigate_to_download_section(page)
                     
@@ -749,6 +757,14 @@ async def capturar_saldo_cuenta(page):
     try:
         print("💰 Iniciando captura de saldo de cuenta corriente...")
         
+        # Primero intentar con el método específico para el elemento widget-accounts--available-amount
+        saldo = await capturar_saldo_widget_especifico(page)
+        if saldo is not None:
+            return saldo
+            
+        # Si no funciona el método específico, usar el método general
+        print("ℹ️ Método específico no funcionó, intentando con método general...")
+        
         # Obtener el iframe principal
         await page.wait_for_selector("iframe#iframeContenido", timeout=10000)
         iframe_element = await page.query_selector("iframe#iframeContenido")
@@ -843,6 +859,60 @@ async def capturar_saldo_cuenta(page):
         print(f"❌ Error capturando saldo: {str(e)}")
         return None
 
+async def capturar_saldo_widget_especifico(page):
+    """Captura el saldo directamente del widget específico con ID widget-accounts--available-amount"""
+    try:
+        print("💰 Intentando capturar saldo desde widget específico...")
+        
+        # Obtener el iframe principal (iframeContenido)
+        await page.wait_for_selector("iframe#iframeContenido", timeout=10000)
+        iframe_element = await page.query_selector("iframe#iframeContenido")
+        iframe_principal = await iframe_element.content_frame()
+        
+        if not iframe_principal:
+            print("❌ No se pudo acceder al iframe principal")
+            return None
+        
+        # Obtener el iframe secundario (oss-layout-iframe)
+        await iframe_principal.wait_for_selector("iframe#oss-layout-iframe", timeout=10000)
+        iframe_secundario_element = await iframe_principal.query_selector("iframe#oss-layout-iframe")
+        iframe_secundario = await iframe_secundario_element.content_frame()
+        
+        if not iframe_secundario:
+            print("❌ No se pudo acceder al iframe secundario oss-layout-iframe")
+            return None
+        
+        # Buscar el elemento específico con el ID widget-accounts--available-amount
+        await iframe_secundario.wait_for_selector("#widget-accounts--available-amount", timeout=10000)
+        elemento_saldo = await iframe_secundario.query_selector("#widget-accounts--available-amount")
+        
+        if not elemento_saldo:
+            print("❌ No se encontró el elemento con ID widget-accounts--available-amount")
+            return None
+        
+        # Obtener el texto del elemento
+        texto_saldo = await elemento_saldo.text_content()
+        print(f"💰 Texto del saldo encontrado: {texto_saldo}")
+        
+        if not texto_saldo or '$' not in texto_saldo:
+            print("❌ El texto del saldo no contiene el símbolo $")
+            return None
+        
+        # Normalizar el saldo
+        saldo_normalizado = normalizar_saldo(texto_saldo)
+        if saldo_normalizado is not None:
+            # Guardar en memoria
+            guardar_saldo_en_memoria(saldo_normalizado)
+            print(f"✅ Saldo capturado desde widget específico: ${saldo_normalizado:,.2f}")
+            return saldo_normalizado
+        else:
+            print(f"❌ No se pudo normalizar el saldo: {texto_saldo}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error capturando saldo desde widget específico: {str(e)}")
+        return None
+
 def extraer_saldo_del_excel(archivo_excel):
     """Extrae el saldo de la celda K2 del archivo Excel descargado"""
     try:
@@ -895,11 +965,20 @@ def normalizar_saldo(saldo_texto):
     """Normaliza el texto del saldo a un número float"""
     try:
         import re
+        print(f"Normalizando saldo: '{saldo_texto}'")
+        
         # Remover símbolos y espacios
         saldo_limpio = re.sub(r'[^\d,\.]', '', saldo_texto)
+        print(f"Saldo después de limpiar símbolos: '{saldo_limpio}'")
         
+        # Formato chileno: el punto es separador de miles, no hay decimales
+        # Ejemplo: "$ 13.216.677" debe convertirse a 13216677
+        if '.' in saldo_limpio and ',' not in saldo_limpio:
+            # Si solo hay puntos, asumimos formato chileno (puntos como separadores de miles)
+            saldo_limpio = saldo_limpio.replace('.', '')
+            print(f"Saldo después de quitar puntos (formato chileno): '{saldo_limpio}'")
         # Manejar diferentes formatos (123,456.78 vs 123.456,78)
-        if ',' in saldo_limpio and '.' in saldo_limpio:
+        elif ',' in saldo_limpio and '.' in saldo_limpio:
             # Determinar cuál es el separador decimal
             ultima_coma = saldo_limpio.rfind(',')
             ultimo_punto = saldo_limpio.rfind('.')
@@ -920,6 +999,7 @@ def normalizar_saldo(saldo_texto):
                 # Probablemente separador de miles
                 saldo_limpio = saldo_limpio.replace(',', '')
         
+        print(f"Saldo final antes de convertir a float: '{saldo_limpio}'")
         return float(saldo_limpio)
         
     except Exception as e:
@@ -931,6 +1011,11 @@ def guardar_saldo_en_memoria(saldo):
     global saldos_memoria
     
     fecha_actual = datetime.now()
+    
+    # Verificar si el saldo ha cambiado respecto al último en memoria
+    if "ultimo_saldo" in saldos_memoria and saldos_memoria["ultimo_saldo"] is not None and abs(saldos_memoria["ultimo_saldo"] - saldo) < 0.01:
+        print(f"⏭️ El saldo no ha cambiado en memoria (${saldo:,.2f}). No se guardará.")
+        return
     
     # Actualizar último saldo
     saldos_memoria["ultimo_saldo"] = saldo
@@ -965,18 +1050,21 @@ def guardar_saldo_en_memoria(saldo):
             print(f"   📊 Último saldo en BD: ${ultimo_saldo:,.2f}")
             print(f"   📈 Diferencia: ${diferencia:,.2f}")
             print(f"   ✅ Diferencia > $0.01: {diferencia >= 0.01}")
+            
+            # Verificar si el saldo ha cambiado antes de guardarlo
+            if diferencia < 0.01:
+                print(f"⏭️ El saldo no ha cambiado (${saldo:,.2f}). No se guardará en BD.")
+                return
         else:
             print(f"   ℹ️ No hay registros previos en BD")
         
-        # Intentar guardar
+        # Intentar guardar solo si hay diferencia o no hay registros previos
         guardado_db = guardar_saldo_bci(saldo)
         if guardado_db:
             print(f"💾 ✅ Saldo guardado exitosamente en base de datos: ${saldo:,.2f}")
         else:
             print(f"⏭️ ❌ Saldo NO guardado en BD")
             print(f"   🔍 Posibles razones:")
-            print(f"   - Ya existe un registro hoy")
-            print(f"   - Diferencia menor a $0.01")
             print(f"   - Error de conexión a BD")
     except Exception as e:
         print(f"⚠️ ❌ Error crítico guardando en base de datos: {str(e)}")
@@ -1015,7 +1103,7 @@ def diagnosticar_bd_bci():
         existe_hoy = db.verificar_saldo_hoy("BCI")
         if existe_hoy:
             print("   ⚠️ Ya existe un registro de BCI para hoy")
-            print("   📝 Esto impide guardar nuevos registros")
+            print("   📝 Esto ya no impide guardar nuevos registros")
         else:
             print("   ✅ No hay registro de hoy, se puede guardar")
         
