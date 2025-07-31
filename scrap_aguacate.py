@@ -28,8 +28,11 @@ logging.basicConfig(
 # Inicializar el bot con el token proporcionado
 bot = telebot.TeleBot('7442937067:AAEK2y8mULc6FAM4CTyuyrUM0hySZNdq5EY')
 
-# Definir el chat ID del grupo directamente
+# Definir el chat ID del grupo directamente (solo para referencia, no se usa automáticamente)
 default_chat_id = '-4090514300'
+
+# CONFIGURACIÓN: Solo responder a comandos explícitos, NO enviar notificaciones automáticas
+AUTO_NOTIFICATIONS_ENABLED = False
 
 # Variables globales para el navegador
 browser = None
@@ -77,6 +80,10 @@ def safe_send_message(chat_id, message, parse_mode=None):
                 logging.error(f"Fallo tras {max_retries} intentos enviando mensaje: {str(e)}")
 
 def compare_values(old_value, new_value):
+    """
+    Compara valores anteriores con nuevos para mostrar tendencias.
+    NOTA: Esta función solo retorna iconos informativos, NO envía notificaciones automáticas.
+    """
     if old_value is None or new_value is None:
         return ""
     
@@ -181,6 +188,11 @@ async def is_session_expired():
             return True
 
 async def extract_data():
+    """
+    Extrae datos de tasas de Aguacate Wallet y los compara con valores anteriores.
+    IMPORTANTE: Esta función NO envía notificaciones automáticas, solo retorna datos
+    para ser enviados cuando se solicite explícitamente via comando /agua.
+    """
     global page
     max_retries = 3
     for attempt in range(max_retries):

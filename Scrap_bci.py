@@ -44,6 +44,10 @@ TOKEN_PATH = os.environ.get("TOKEN_PATH")
 API_TOKEN_SAN_CRISTOBAL = os.environ.get("API_TOKEN_SAN_CRISTOBAL")
 API_TOKEN_ST_CRISTOBAL = os.environ.get("API_TOKEN_ST_CRISTOBAL")
 
+# Credenciales BCI desde variables de entorno
+BCI_RUT = os.environ.get("BCI_RUT")
+BCI_PASSWORD = os.environ.get("BCI_PASSWORD")
+
 # Configuración de rutas
 EXCEL_OUTPUT_DIR = os.path.join(current_dir, "Bancos")
 os.makedirs(EXCEL_OUTPUT_DIR, exist_ok=True)
@@ -381,9 +385,9 @@ async def login_to_bci(page):
         
         print("🔍 Esperando elementos del formulario...")
         # Esperar y llenar RUT con pausas entre cada carácter
-        # Credenciales actuales (actualizadas)
-        rut = "25.880.004-4"
-        # Credenciales anteriores: "17109134-9", "17786044-1"
+        # Credenciales desde variables de entorno
+        rut = BCI_RUT or "17786044-1"  # Fallback si no está definida
+        # Credenciales anteriores: "17109134-9", "25.880.004-4"
         for char in rut:
             await page.type("input#rut_aux", char, delay=random.randint(20, 50))
             await random_delay(0.05, 0.1)
@@ -395,8 +399,8 @@ async def login_to_bci(page):
         await random_delay(0.2, 0.5)
         
         # Escribir contraseña con pausas variables
-        clave = "Ps178445"
-        # Contraseña anterior: "Kj6mm866"
+        clave = BCI_PASSWORD or "Kj6mm866"  # Fallback si no está definida
+        # Contraseña anterior: "Ps178445"
         for char in clave:
             await page.type("input#clave", char, delay=random.randint(30, 70))
             await random_delay(0.05, 0.1)
