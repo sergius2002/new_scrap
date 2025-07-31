@@ -1,6 +1,7 @@
 import asyncio
 import re
 import datetime
+from datetime import timedelta
 import hashlib
 import subprocess
 import sys
@@ -640,55 +641,305 @@ async def process_account(account, p):
             print(f"Error al extraer datos de la tabla: {e}")
             return account_transfers
 
-        print("Cerrando sesión...")
+        print("🔄 INICIANDO MODO CONTINUO - Manteniendo sesión activa...")
+        print("⚠️  NO se cerrará la sesión. Procesando en bucle continuo...")
+        
+        # BUCLE CONTINUO - Mantener sesión activa y procesar periódicamente
+        iteration_count = 0
+        while True:
+            try:
+                iteration_count += 1
+                import random
+                wait_interval = random.randint(10, 15)  # Intervalo aleatorio entre 10-15 segundos
+                
+                print(f"\n🔄 === ITERACIÓN #{iteration_count} - {datetime.datetime.now().strftime('%H:%M:%S')} ===")
+                print(f"⏱️  Próxima actualización en {wait_interval} segundos...")
+                
+                # Verificar que la sesión sigue activa
+                try:
+                    print("🔄 Manteniendo sesión activa sin recargar página...")
+                    await page.wait_for_selector("body", state="visible", timeout=5000)
+                    print("✅ Sesión activa confirmada")
+                except Exception as e:
+                    print(f"❌ Sesión perdida: {e}")
+                    break
+                
+                # NUEVO: Hacer clic en el logo de BancoEstado para volver al inicio
+                try:
+                    print("🏠 Haciendo clic en logo de BancoEstado para volver al inicio...")
+                    logo_selector = "path[fill='#fff'][d*='M92.203 20.98c.388-2.149']"
+                    await page.wait_for_selector(logo_selector, state="visible", timeout=10000)
+                    await page.click(logo_selector)
+                    await asyncio.sleep(5)  # Aumentar tiempo de espera
+                    print("✅ Click en logo exitoso, volviendo al inicio")
+                    
+                    # Esperar a que la página principal se cargue completamente
+                    print("⏳ Esperando a que la página principal se cargue...")
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+                    await asyncio.sleep(3)
+                    print("✅ Página principal cargada")
+                    
+                except Exception as logo_error:
+                    print(f"⚠️  Error al hacer clic en logo: {logo_error}")
+                    continue
+                
+                # REPLICAR TODO EL PROCESO DESDE EL INICIO (después del login)
+                
+                # 1. CAPTURAR SALDO NUEVAMENTE
+                print(f"\n💰 === CAPTURANDO SALDO ACTUALIZADO ===")
+                print(f"Iniciando captura de saldo para cuenta {account['rutEmpresa']}...")
+                
+                try:
+                    # Buscar saldo en la página principal
+                    print("🔍 Buscando saldo en la página principal...")
+                    saldo_selectors = [
+                        "div[_ngcontent-ng-c2349411678][aria-hidden='true']",
+                        "div.saldo-disponible",
+                        "span.saldo-valor",
+                        "div[class*='saldo']",
+                        "span[class*='saldo']"
+                    ]
+                    
+                    saldo_text = None
+                    for selector in saldo_selectors:
+                        try:
+                            print(f"   Probando selector: {selector}")
+                            await page.wait_for_selector(selector, state="visible", timeout=5000)
+                            saldo_element = await page.query_selector(selector)
+                            if saldo_element:
+                                saldo_text = await saldo_element.inner_text()
+                                if saldo_text and any(char.isdigit() for char in saldo_text):
+                                    print(f"💰 Saldo encontrado con selector '{selector}': {saldo_text}")
+                                    break
+                        except Exception:
+                            continue
+                    
+                    if saldo_text:
+                        # Limpiar y formatear el saldo
+                        saldo_limpio = re.sub(r'[^\d,.-]', '', saldo_text)
+                        saldo_limpio = saldo_limpio.replace('.', '').replace(',', '.')
+                        
+                        try:
+                            saldo_float = float(saldo_limpio)
+                            saldo_formateado = f"${saldo_float:,.2f}"
+                            print(f"✅ Saldo capturado exitosamente: {saldo_formateado}")
+                            
+                            # Guardar saldo en la base de datos
+                            print(f"💾 Guardando saldo actualizado de ESTADO_{account['rutEmpresa']}...")
+                            print(f"   💰 Saldo actual a guardar: {saldo_formateado}")
+                            
+                            db = SaldoBancosDB()
+                            saved = db.guardar_saldo(f"ESTADO_{account['rutEmpresa']}", saldo_float)
+                            
+                            if saved:
+                                print("✅ ✅ Saldo guardado exitosamente en BD")
+                            else:
+                                print("⏭️ ❌ Saldo NO guardado en BD (sin cambios significativos)")
+                                
+                        except ValueError as e:
+                            print(f"❌ Error al convertir saldo a número: {e}")
+                    else:
+                        print("❌ No se pudo encontrar el saldo en la página")
+                        
+                except Exception as e:
+                    print(f"❌ Error al capturar saldo: {e}")
+                
+                # 2. PROCESAR TRANSFERENCIAS NUEVAMENTE
+                print(f"\n📋 === PROCESANDO TRANSFERENCIAS ACTUALIZADAS ===")
+                
+                try:
+                    # 2. REPLICAR EXACTAMENTE EL PROCESO DE TRANSFERENCIAS
+                    print(f"\n📋 === PROCESANDO TRANSFERENCIAS ACTUALIZADAS ===")
+                    print("Haciendo clic en 'Transferencias'...")
+                    # USAR EXACTAMENTE EL MISMO SELECTOR QUE EN EL PROCESO ORIGINAL
+                    transferencias_xpath = "//body/be-root/div[@class='app-home']/div[@class='ng-star-inserted']/div[@class='container-home']/div[@class='asd-container-sidebar']/be-menu/asd-menu-sidebar/div[@class='menu-sidebar-home ng-star-inserted']/nav[@class='menu-sidebar-home__content']/ul[@class='link_list']/li[2]/a[1]"
+                    
+                    # Esperar a que el elemento esté visible y hacer click
+                    await page.wait_for_selector(transferencias_xpath, state="visible", timeout=20000)
+                    await asyncio.sleep(2)  # Pequeña pausa antes del click
+                    await page.click(transferencias_xpath)
+                    await asyncio.sleep(3)  # Tiempo para que se expanda el menú
+                    print("✅ Click en 'Transferencias' exitoso")
+
+                    # Hacer clic en Consultar - USAR EXACTAMENTE EL MISMO SELECTOR
+                    print("Haciendo clic en 'Consultar'...")
+                    consultar_xpath = "//div[@class='asd-container-sidebar']//ul[@id='Transferencias']//div[@class='submenu-link-name'][normalize-space()='Consultar']"
+                    await page.wait_for_selector(consultar_xpath, state="visible", timeout=20000)
+                    await asyncio.sleep(2)  # Pequeña pausa antes del click
+                    await page.click(consultar_xpath)
+                    await asyncio.sleep(3)  # Tiempo para que cargue la página
+                    print("✅ Click en 'Consultar' exitoso")
+
+                    # Cambiar al iframe - USAR EXACTAMENTE EL MISMO MÉTODO
+                    print("Cambiando al iframe de consultas-transferencias...")
+                    iframes = page.frames
+                    iframe = next((frame for frame in iframes if "consultas-transferencias-pj-app" in frame.url), None)
+                    if not iframe:
+                        print("No se encontró el iframe de consultas-transferencias")
+                        continue
+
+                    # Hacer clic en Recibidas - USAR EXACTAMENTE EL MISMO SELECTOR
+                    print("Haciendo clic en 'Recibidas'...")
+                    await iframe.wait_for_selector('li:has-text("Recibidas")', state="visible", timeout=15000)
+                    await iframe.click('li:has-text("Recibidas")')
+                    await asyncio.sleep(3)
+
+                    # Ingresar fechas - USAR EXACTAMENTE EL MISMO MÉTODO
+                    print("Calculando rango de fechas...")
+                    fecha_final = datetime.datetime.now()
+                    fecha_inicial = fecha_final - datetime.timedelta(days=5)
+                    
+                    print("Ingresando fechas...")
+                    fecha_inicial_str = fecha_inicial.strftime("%d/%m/%Y")
+                    fecha_final_str = fecha_final.strftime("%d/%m/%Y")
+                    
+                    try:
+                        # Esperar a que el formulario esté disponible
+                        await iframe.wait_for_selector('form', state="visible", timeout=10000)
+                        await asyncio.sleep(5)  # Dar más tiempo para que todo cargue
+                        
+                        # Intentar ingresar fecha inicial
+                        try:
+                            print("Intentando ingresar fecha inicial...")
+                            # Esperar y hacer clic en el primer campo de fecha
+                            await iframe.wait_for_selector('dsd-datepicker-only input[type="text"]', state="visible", timeout=10000)
+                            await iframe.click('dsd-datepicker-only input[type="text"]')
+                            await asyncio.sleep(2)
+                            
+                            # Limpiar y escribir la fecha
+                            await iframe.fill('dsd-datepicker-only input[type="text"]', "")
+                            await asyncio.sleep(1)
+                            await iframe.type('dsd-datepicker-only input[type="text"]', fecha_inicial_str, delay=100)
+                            await asyncio.sleep(2)
+                            
+                            # Presionar Tab para mover el foco al siguiente campo
+                            await page.keyboard.press('Tab')
+                            await asyncio.sleep(1)
+                            
+                            # Escribir la fecha final directamente
+                            fecha_final_ddmmyyyy = fecha_final.strftime("%d%m%Y")
+                            await page.keyboard.type(fecha_final_ddmmyyyy, delay=100)
+                            await asyncio.sleep(2)
+                            
+                            print("Fechas ingresadas exitosamente")
+                        except Exception as e:
+                            print(f"Error al ingresar fechas: {e}")
+                            continue
+                        
+                        await asyncio.sleep(3)  # Esperar a que los cambios se apliquen
+                        
+                    except Exception as e:
+                        print(f"Error general al intentar ingresar fechas: {e}")
+                        continue
+                        
+                    print("Haciendo clic en el botón 'Consultar'...")
+                    await iframe.click('button:has-text("Consultar")')
+                    await asyncio.sleep(5)
+
+                    print("Seleccionando 200 registros por página...")
+                    try:
+                        # Esperar a que el select esté visible
+                        await iframe.wait_for_selector('select[name="select"]', state="visible", timeout=10000)
+                        print("Select encontrado, intentando seleccionar 200 registros...")
+                        
+                        # Seleccionar la opción 200
+                        await iframe.select_option('select[name="select"]', "200")
+                        print("200 registros seleccionados exitosamente")
+                        await asyncio.sleep(5)
+                    except Exception as e:
+                        print(f"⚠️  Error al seleccionar 200 registros: {e}")
+
+                    # Extraer datos
+                    print("Extrayendo datos de la tabla...")
+                    try:
+                        await iframe.wait_for_selector("table.table__container", state="visible", timeout=10000)
+                        await asyncio.sleep(3)
+                        
+                        new_transfers = await extract_all_transfers(iframe)
+                        
+                        if new_transfers:
+                            # Agregar RUT de empresa y timestamp
+                            for transfer in new_transfers:
+                                transfer["rut_empresa"] = account["rutEmpresa"]
+                                transfer["timestamp_captura"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            print(f"✅ Extraídas {len(new_transfers)} transferencias en iteración #{iteration_count}")
+                            
+                            # Guardar solo el archivo principal (eliminamos archivos de iteración)
+                            main_filename = f"transferencias_{account['rutEmpresa']}.xlsx"
+                            export_to_excel(new_transfers, main_filename)
+                            print(f"💾 Archivo principal actualizado: {main_filename}")
+                            
+                            # Ejecutar estado.py para subir los datos a Supabase
+                            print("\n🔄 Iniciando subida de datos a Supabase...")
+                            try:
+                                # Obtener la ruta absoluta del directorio del script
+                                script_dir = os.path.dirname(os.path.abspath(__file__))
+                                # Obtener la ruta absoluta de estado.py
+                                estado_script = os.path.join(script_dir, "estado.py")
+                                
+                                # Verificar que el archivo existe
+                                if not os.path.exists(estado_script):
+                                    print(f"❌ Error: No se encontró el archivo estado.py en: {estado_script}")
+                                else:
+                                    print(f"🔄 Ejecutando estado.py desde: {estado_script}")
+                                    
+                                    # Cambiar al directorio del script antes de ejecutar estado.py
+                                    original_dir = os.getcwd()
+                                    os.chdir(script_dir)
+                                    
+                                    # Ejecutar estado.py
+                                    subprocess.run([sys.executable, estado_script], check=True)
+                                    print("✅ Datos subidos a Supabase exitosamente.")
+                                    
+                                    # Volver al directorio original
+                                    os.chdir(original_dir)
+                            except subprocess.CalledProcessError as e:
+                                print(f"❌ Error al ejecutar estado.py: {e}")
+                            except Exception as e:
+                                print(f"❌ Error inesperado al subir datos a Supabase: {e}")
+                            finally:
+                                # Asegurarse de volver al directorio original incluso si hay errores
+                                try:
+                                    os.chdir(original_dir)
+                                except:
+                                    pass
+                            
+                        else:
+                            print("ℹ️  No se encontraron transferencias en esta iteración")
+                            
+                    except Exception as e:
+                        print(f"⚠️  Error al extraer datos: {e}")
+                        
+                except Exception as e:
+                    print(f"⚠️  Error en procesamiento de transferencias: {e}")
+                    print("🔄 Continuando con la siguiente iteración...")
+                    # No cerrar el navegador, solo continuar con la siguiente iteración
+                
+                # Incrementar contador de iteración
+                iteration_count += 1
+                
+                # Esperar el intervalo antes de la siguiente iteración
+                print(f"⏳ Esperando {wait_interval} segundos antes de la siguiente actualización...")
+                await asyncio.sleep(wait_interval)
+                
+            except KeyboardInterrupt:
+                print("\n🛑 Interrupción manual detectada. Cerrando sesión...")
+                break
+            except Exception as e:
+                print(f"❌ Error en iteración #{iteration_count}: {e}")
+                print("🔄 Continuando con la siguiente iteración en 30 segundos...")
+                await asyncio.sleep(30)
+                iteration_count += 1
+        
+        # Solo cerrar si salimos del bucle
+        print("🔚 Finalizando sesión continua...")
         try:
-            # Primero intentar cerrar sesión desde el iframe
-            try:
-                await iframe.wait_for_selector("button:has-text('Cerrar Sesión')", state="visible", timeout=10000)
-                await iframe.click("button:has-text('Cerrar Sesión')")
-                await asyncio.sleep(3)
-                
-                # Verificar si hay diálogo de confirmación en el iframe
-                try:
-                    confirm_button = await iframe.wait_for_selector("button:has-text('Confirmar')", timeout=5000)
-                    if confirm_button:
-                        await iframe.click("button:has-text('Confirmar')")
-                        await asyncio.sleep(2)
-                except:
-                    pass
-            except Exception as e:
-                print(f"No se pudo cerrar sesión desde el iframe: {e}")
-            
-            # Si no se pudo desde el iframe, intentar desde la página principal
-            try:
-                await page.wait_for_selector("button:has-text('Cerrar Sesión')", state="visible", timeout=10000)
-                await page.click("button:has-text('Cerrar Sesión')")
-                await asyncio.sleep(3)
-                
-                # Verificar si hay diálogo de confirmación en la página principal
-                try:
-                    confirm_button = await page.wait_for_selector("button:has-text('Confirmar')", timeout=5000)
-                    if confirm_button:
-                        await page.click("button:has-text('Confirmar')")
-                        await asyncio.sleep(2)
-                except:
-                    pass
-            except Exception as e:
-                print(f"No se pudo cerrar sesión desde la página principal: {e}")
-            
-            # Esperar un momento para asegurar que la sesión se cierre
-            await asyncio.sleep(5)
-            print("Sesión cerrada exitosamente")
-            
+            await browser.close()
         except Exception as e:
-            print(f"Error al cerrar sesión: {e}")
-        finally:
-            # Asegurarse de que el navegador se cierre
-            try:
-                await browser.close()
-            except Exception as e:
-                print(f"Error al cerrar el navegador: {e}")
-            return account_transfers
+            print(f"Error al cerrar navegador: {e}")
+            
+        return account_transfers
 
     except Exception as e:
         print(f"Error al procesar la cuenta {account['rutEmpresa']}: {e}")
@@ -706,17 +957,18 @@ async def process_account(account, p):
 # --------------------------
 
 async def main():
-    # Lista de cuentas a procesar
+    # Lista de cuentas a procesar - TODAS LAS EMPRESAS
     accounts = [
         {"rutEmpresa": "774691731", "rutPersona": "156089753", "password": "Kj6mm866"},
         {"rutEmpresa": "777734482", "rutPersona": "156089753", "password": "Kj6mm866"},
         {"rutEmpresa": "77936187K", "rutPersona": "171091349", "password": "Kj6mm866"}
     ]
     
+    print("✅ MODO COMPLETO: Procesando TODAS las empresas")
     print("A punto de lanzar Playwright")
     async with async_playwright() as p:
         print("Playwright iniciado correctamente")
-        # Procesar todas las cuentas simultáneamente
+        # Procesar solo una cuenta para pruebas
         results = await asyncio.gather(*[process_account(account, p) for account in accounts])
 
     # Combinar todas las transferencias para el archivo combinado
