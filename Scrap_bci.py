@@ -546,7 +546,9 @@ async def monitor_table_changes():
                     
                     # Extraer saldo del archivo Excel descargado
                     try:
-                        archivo_excel = "/Users/sergioplaza/Documents/new_scrap/Bancos/excel_detallado.xlsx"
+                        # Usar ruta relativa al directorio actual del script
+                        current_dir = os.path.dirname(os.path.abspath(__file__))
+                        archivo_excel = os.path.join(current_dir, "Bancos", "excel_detallado.xlsx")
                         saldo_capturado = extraer_saldo_del_excel(archivo_excel)
                         if saldo_capturado:
                             print(f"💰 Saldo actual extraído del Excel: ${saldo_capturado:,.2f}")

@@ -11,7 +11,9 @@ import os
 def extraer_saldo_bci_excel():
     """Extrae el saldo del archivo Excel de BCI más reciente"""
     try:
-        archivo_excel = "Bancos/excel_detallado.xlsx"
+        # Usar ruta relativa al directorio actual del script
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        archivo_excel = os.path.join(current_dir, "Bancos", "excel_detallado.xlsx")
         
         print("🔍 === EXTRACCIÓN SALDO BCI DESDE EXCEL ===")
         print(f"📅 Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -70,17 +72,14 @@ def extraer_saldo_bci_excel():
                         
                         if diferencia >= 0.01:
                             print(f"\n🚨 HAY DIFERENCIA SIGNIFICATIVA")
-                            print(f"   💡 El script debería guardar este nuevo saldo")
+                            print(f"   💡 Guardando nuevo saldo automáticamente...")
                             
-                            # Ofrecer guardarlo manualmente
-                            print(f"\n❓ ¿Quieres guardar este saldo manualmente? (y/n)")
-                            respuesta = input().lower().strip()
-                            if respuesta == 'y':
-                                from saldo_bancos_db import guardar_saldo_bci
-                                if guardar_saldo_bci(saldo_normalizado, forzar=True):
-                                    print(f"✅ Saldo guardado exitosamente: ${saldo_normalizado:,.2f}")
-                                else:
-                                    print(f"❌ Error al guardar el saldo")
+                            # Guardar automáticamente sin preguntar
+                            from saldo_bancos_db import guardar_saldo_bci
+                            if guardar_saldo_bci(saldo_normalizado, forzar=True):
+                                print(f"✅ Saldo guardado exitosamente: ${saldo_normalizado:,.2f}")
+                            else:
+                                print(f"❌ Error al guardar el saldo")
                         else:
                             print(f"\n✅ Sin diferencias significativas")
                     else:
