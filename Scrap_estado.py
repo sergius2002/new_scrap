@@ -506,7 +506,7 @@ async def process_account(account, p):
         
         # Esperar adicional para que los frames se carguen completamente
         print("⏳ Esperando a que los frames se carguen completamente...")
-        await asyncio.sleep(10)  # Espera adicional de 10 segundos
+        await asyncio.sleep(3)
         
         # Intentar múltiples veces encontrar el frame
         target_frame = None
@@ -517,7 +517,7 @@ async def process_account(account, p):
             if target_frame:
                 break
             print(f"⏳ Frame no encontrado, esperando 5 segundos antes del siguiente intento...")
-            await asyncio.sleep(5)
+            await asyncio.sleep(2)
         if not target_frame:
             print("No se encontró el frame de login.")
             return account_transfers
@@ -537,7 +537,7 @@ async def process_account(account, p):
         print("Haciendo clic en el botón de inicio de sesión...")
         await click_with_retries(page, target_frame, "button.dsd-button.primary")
         await page.wait_for_load_state("networkidle")
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
 
         # *** CAPTURAR SALDO ANTES DE IR A TRANSFERENCIAS ***
         print("\n🏦 === CAPTURANDO SALDO DE LA CUENTA ===")
@@ -551,27 +551,52 @@ async def process_account(account, p):
         print("\n📋 === PROCESANDO TRANSFERENCIAS ===")
         print("Haciendo clic en 'Transferencias'...")
         transferencias_xpath = "//body/be-root/div[@class='app-home']/div[@class='ng-star-inserted']/div[@class='container-home']/div[@class='asd-container-sidebar']/be-menu/asd-menu-sidebar/div[@class='menu-sidebar-home ng-star-inserted']/nav[@class='menu-sidebar-home__content']/ul[@class='link_list']/li[2]/a[1]"
-        await page.wait_for_selector(transferencias_xpath, state="visible", timeout=15000)
-        await page.click(transferencias_xpath)
-        await asyncio.sleep(3)
+        
+        try:
+            await page.wait_for_selector(transferencias_xpath, state="visible", timeout=45000)  # 45 segundos
+            await page.click(transferencias_xpath)
+            await asyncio.sleep(2)
+            print("✅ Click en 'Transferencias' exitoso")
+        except Exception as e:
+            print(f"❌ Error al hacer click en 'Transferencias': {e}")
+            return account_transfers
 
         print("Haciendo clic en 'Consultar'...")
         consultar_xpath = "//div[@class='asd-container-sidebar']//ul[@id='Transferencias']//div[@class='submenu-link-name'][normalize-space()='Consultar']"
-        await page.wait_for_selector(consultar_xpath, state="visible", timeout=15000)
-        await page.click(consultar_xpath)
+        
+        try:
+            await page.wait_for_selector(consultar_xpath, state="visible", timeout=45000)  # 45 segundos
+            await page.click(consultar_xpath)
+            await asyncio.sleep(2)
+            print("✅ Click en 'Consultar' exitoso")
+        except Exception as e:
+            print(f"❌ Error al hacer click en 'Consultar': {e}")
+            return account_transfers
+
+        print("Esperando a que se cargue el iframe...")
         await asyncio.sleep(3)
 
         print("Cambiando al iframe de consultas-transferencias...")
-        iframes = page.frames
-        iframe = next((frame for frame in iframes if "consultas-transferencias-pj-app" in frame.url), None)
-        if not iframe:
-            print("No se encontró el iframe de consultas-transferencias")
+        try:
+            iframes = page.frames
+            iframe = next((frame for frame in iframes if "consultas-transferencias-pj-app" in frame.url), None)
+            if not iframe:
+                print("❌ No se encontró el iframe de consultas-transferencias")
+                return account_transfers
+            print("✅ Iframe encontrado exitosamente")
+        except Exception as e:
+            print(f"❌ Error buscando iframe: {e}")
             return account_transfers
 
         print("Haciendo clic en 'Recibidas'...")
-        await iframe.wait_for_selector('li:has-text("Recibidas")', state="visible", timeout=15000)
-        await iframe.click('li:has-text("Recibidas")')
-        await asyncio.sleep(3)
+        try:
+            await iframe.wait_for_selector('li:has-text("Recibidas")', state="visible", timeout=45000)  # 45 segundos
+            await iframe.click('li:has-text("Recibidas")')
+            await asyncio.sleep(2)
+            print("✅ Click en 'Recibidas' exitoso")
+        except Exception as e:
+            print(f"❌ Error al hacer click en 'Recibidas': {e}")
+            return account_transfers
 
         print("Calculando rango de fechas...")
         fecha_final = datetime.datetime.now()
@@ -583,66 +608,64 @@ async def process_account(account, p):
         
         try:
             # Esperar a que el formulario esté disponible
-            await iframe.wait_for_selector('form', state="visible", timeout=10000)
-            await asyncio.sleep(5)  # Dar más tiempo para que todo cargue
+            print("Esperando a que el formulario esté disponible...")
+            await iframe.wait_for_selector('form', state="visible", timeout=45000)  # 45 segundos
+            await asyncio.sleep(3)
             
-            # Intentar ingresar fecha inicial
-            try:
-                print("Intentando ingresar fecha inicial...")
-                # Esperar y hacer clic en el primer campo de fecha
-                await iframe.wait_for_selector('dsd-datepicker-only input[type="text"]', state="visible", timeout=10000)
-                await iframe.click('dsd-datepicker-only input[type="text"]')
-                await asyncio.sleep(2)
-                
-                # Limpiar y escribir la fecha
-                await iframe.fill('dsd-datepicker-only input[type="text"]', "")
-                await asyncio.sleep(1)
-                await iframe.type('dsd-datepicker-only input[type="text"]', fecha_inicial_str, delay=100)
-                await asyncio.sleep(2)
-                
-                # Presionar Tab para mover el foco al siguiente campo
-                await page.keyboard.press('Tab')
-                await asyncio.sleep(1)
-                
-                # Escribir la fecha final directamente
-                fecha_final_ddmmyyyy = fecha_final.strftime("%d%m%Y")
-                await page.keyboard.type(fecha_final_ddmmyyyy, delay=100)
-                await asyncio.sleep(2)
-                
-                print("Fechas ingresadas exitosamente")
-            except Exception as e:
-                print(f"Error al ingresar fechas: {e}")
-                return account_transfers
+            # Esperar y hacer clic en el primer campo de fecha
+            await iframe.wait_for_selector('dsd-datepicker-only input[type="text"]', state="visible", timeout=20000)
+            await iframe.click('dsd-datepicker-only input[type="text"]')
+            await asyncio.sleep(2)
             
-            await asyncio.sleep(3)  # Esperar a que los cambios se apliquen
+            # Limpiar y escribir la fecha inicial
+            await iframe.fill('dsd-datepicker-only input[type="text"]', "")
+            await asyncio.sleep(1)
+            await iframe.type('dsd-datepicker-only input[type="text"]', fecha_inicial_str, delay=100)
+            await asyncio.sleep(2)
+            
+            # Presionar Tab para mover el foco al siguiente campo
+            await page.keyboard.press('Tab')
+            await asyncio.sleep(1)
+            
+            # Escribir la fecha final directamente
+            fecha_final_ddmmyyyy = fecha_final.strftime("%d%m%Y")
+            await page.keyboard.type(fecha_final_ddmmyyyy, delay=100)
+            await asyncio.sleep(2)
+            
+            print("✅ Fechas ingresadas exitosamente")
             
         except Exception as e:
-            print(f"Error general al intentar ingresar fechas: {e}")
+            print(f"❌ Error al intentar ingresar fechas: {e}")
             return account_transfers
             
         print("Haciendo clic en el botón 'Consultar'...")
-        await iframe.click('button:has-text("Consultar")')
-        await asyncio.sleep(5)
+        try:
+            await iframe.wait_for_selector('button:has-text("Consultar")', state="visible", timeout=45000)  # 45 segundos
+            await iframe.click('button:has-text("Consultar")')
+            await asyncio.sleep(3)
+            print("✅ Click en 'Consultar' exitoso")
+        except Exception as e:
+            print(f"❌ Error al hacer click en 'Consultar': {e}")
+            return account_transfers
 
         print("Seleccionando 200 registros por página...")
         try:
-            # Esperar a que el select esté visible
-            await iframe.wait_for_selector('select[name="select"]', state="visible", timeout=10000)
+            await iframe.wait_for_selector('select[name="select"]', state="visible", timeout=45000)  # 45 segundos
             print("Select encontrado, intentando seleccionar 200 registros...")
             
             # Seleccionar la opción 200
             await iframe.select_option('select[name="select"]', "200")
-            print("200 registros seleccionados exitosamente")
-            await asyncio.sleep(5)
+            print("✅ 200 registros seleccionados exitosamente")
+            await asyncio.sleep(3)
         except Exception as e:
-            print(f"Error al seleccionar 200 registros: {e}")
-            return account_transfers
+            print(f"⚠️ No se pudo seleccionar 200 registros: {e}")
+            print("Continuando con la configuración por defecto")
 
         print("Extrayendo datos de la tabla...")
         try:
             # Esperar a que la tabla esté visible en el iframe
-            await iframe.wait_for_selector("table.table__container", state="visible", timeout=10000)
-            await asyncio.sleep(5)  # Dar tiempo extra para que todo cargue
+            await iframe.wait_for_selector("table.table__container", state="visible", timeout=60000)  # 60 segundos
+            await asyncio.sleep(3)
             
             # Extraer todas las transferencias
             account_transfers = await extract_all_transfers(iframe)
@@ -652,16 +675,16 @@ async def process_account(account, p):
                 transfer["rut_empresa"] = account["rutEmpresa"]
             
             if account_transfers:
-                print(f"Se extrajeron {len(account_transfers)} transferencias exitosamente")
+                print(f"✅ Se extrajeron {len(account_transfers)} transferencias exitosamente")
                 # Generar nombre de archivo basado en el RUT de la empresa
                 filename = f"transferencias_{account['rutEmpresa']}.xlsx"
                 # Guardar en Excel
                 export_to_excel(account_transfers, filename)
             else:
-                print("No se encontraron transferencias para extraer")
+                print("⚠️ No se encontraron transferencias para extraer")
                 
         except Exception as e:
-            print(f"Error al extraer datos de la tabla: {e}")
+            print(f"❌ Error al extraer datos de la tabla: {e}")
             return account_transfers
 
         print("🔄 INICIANDO MODO CONTINUO - Manteniendo sesión activa...")
@@ -693,7 +716,7 @@ async def process_account(account, p):
                     logo_selector = "path[fill='#fff'][d*='M92.203 20.98c.388-2.149']"
                     await page.wait_for_selector(logo_selector, state="visible", timeout=10000)
                     await page.click(logo_selector)
-                    await asyncio.sleep(5)  # Aumentar tiempo de espera
+                    await asyncio.sleep(2)
                     print("✅ Click en logo exitoso, volviendo al inicio")
                     
                     # Esperar a que la página principal se cargue completamente
@@ -779,18 +802,16 @@ async def process_account(account, p):
                     
                     # Esperar a que el elemento esté visible y hacer click
                     await page.wait_for_selector(transferencias_xpath, state="visible", timeout=20000)
-                    await asyncio.sleep(2)  # Pequeña pausa antes del click
                     await page.click(transferencias_xpath)
-                    await asyncio.sleep(3)  # Tiempo para que se expanda el menú
+                    await asyncio.sleep(2)
                     print("✅ Click en 'Transferencias' exitoso")
 
                     # Hacer clic en Consultar - USAR EXACTAMENTE EL MISMO SELECTOR
                     print("Haciendo clic en 'Consultar'...")
                     consultar_xpath = "//div[@class='asd-container-sidebar']//ul[@id='Transferencias']//div[@class='submenu-link-name'][normalize-space()='Consultar']"
                     await page.wait_for_selector(consultar_xpath, state="visible", timeout=20000)
-                    await asyncio.sleep(2)  # Pequeña pausa antes del click
                     await page.click(consultar_xpath)
-                    await asyncio.sleep(3)  # Tiempo para que cargue la página
+                    await asyncio.sleep(2)
                     print("✅ Click en 'Consultar' exitoso")
 
                     # Cambiar al iframe - USAR EXACTAMENTE EL MISMO MÉTODO
@@ -819,7 +840,7 @@ async def process_account(account, p):
                     try:
                         # Esperar a que el formulario esté disponible
                         await iframe.wait_for_selector('form', state="visible", timeout=10000)
-                        await asyncio.sleep(5)  # Dar más tiempo para que todo cargue
+                        await asyncio.sleep(2)
                         
                         # Intentar ingresar fecha inicial
                         try:
@@ -832,7 +853,7 @@ async def process_account(account, p):
                             # Limpiar y escribir la fecha
                             await iframe.fill('dsd-datepicker-only input[type="text"]', "")
                             await asyncio.sleep(1)
-                            await iframe.type('dsd-datepicker-only input[type="text"]', fecha_inicial_str, delay=100)
+                            await iframe.type('dsd-datepicker-only input[type="text"]', fecha_inicial_str, delay=50)
                             await asyncio.sleep(2)
                             
                             # Presionar Tab para mover el foco al siguiente campo
@@ -841,7 +862,7 @@ async def process_account(account, p):
                             
                             # Escribir la fecha final directamente
                             fecha_final_ddmmyyyy = fecha_final.strftime("%d%m%Y")
-                            await page.keyboard.type(fecha_final_ddmmyyyy, delay=100)
+                            await page.keyboard.type(fecha_final_ddmmyyyy, delay=50)
                             await asyncio.sleep(2)
                             
                             print("Fechas ingresadas exitosamente")
@@ -857,26 +878,26 @@ async def process_account(account, p):
                         
                     print("Haciendo clic en el botón 'Consultar'...")
                     await iframe.click('button:has-text("Consultar")')
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(3)
 
                     print("Seleccionando 200 registros por página...")
                     try:
                         # Esperar a que el select esté visible
-                        await iframe.wait_for_selector('select[name="select"]', state="visible", timeout=10000)
+                        await iframe.wait_for_selector('select[name="select"]', state="visible", timeout=45000)
                         print("Select encontrado, intentando seleccionar 200 registros...")
                         
                         # Seleccionar la opción 200
                         await iframe.select_option('select[name="select"]', "200")
                         print("200 registros seleccionados exitosamente")
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(3)
                     except Exception as e:
                         print(f"⚠️  Error al seleccionar 200 registros: {e}")
 
                     # Extraer datos
                     print("Extrayendo datos de la tabla...")
                     try:
-                        await iframe.wait_for_selector("table.table__container", state="visible", timeout=10000)
-                        await asyncio.sleep(3)
+                        await iframe.wait_for_selector("table.table__container", state="visible", timeout=60000)
+                        await asyncio.sleep(2)
                         
                         new_transfers = await extract_all_transfers(iframe)
                         
