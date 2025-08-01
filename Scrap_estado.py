@@ -982,8 +982,8 @@ async def process_account(account, p):
 async def main():
     # Lista de cuentas a procesar - TODAS LAS EMPRESAS
     accounts = [
-        {"rutEmpresa": "774691731", "rutPersona": "156089753", "password": "Kj6mm866"},
-        {"rutEmpresa": "777734482", "rutPersona": "156089753", "password": "Kj6mm866"},
+        {"rutEmpresa": "774691731", "rutPersona": "258800044", "password": "Kj6mm866"},
+        {"rutEmpresa": "777734482", "rutPersona": "262531457", "password": "Kj6mm866"},
         {"rutEmpresa": "77936187K", "rutPersona": "171091349", "password": "Kj6mm866"}
     ]
     
